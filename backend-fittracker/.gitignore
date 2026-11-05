@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+
+# environment variables (berisi kredensial, jangan di-commit)
+.env
+.env.local
+.env.*.local
+
+# logs
+npm-debug.*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
