@@ -62,7 +62,14 @@ export default function GroupsScreen() {
       <Text style={typography.subtitle}>Bergabung & berolahraga bareng.</Text>
       {offline && <Text style={[typography.muted, { color: colors.warn }]}>Mode offline — data komunitas memerlukan koneksi.</Text>}
 
-      <Button title="+ Buat Grup Baru" onPress={() => setShowCreate(true)} />
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Button title="+ Buat Grup" onPress={() => router.push('/group/create')} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Button title="🔍 Cari Grup" variant="outline" onPress={() => router.push('/group/search')} />
+        </View>
+      </View>
 
       {loading ? (
         <Loading label="Memuat komunitas..." />

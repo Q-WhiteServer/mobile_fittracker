@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
 import { getToken, getUser, setToken, setUser, clearAuth } from '../storage';
+import { syncPendingData } from '../localStore';
 
 const AuthContext = createContext(null);
 
@@ -17,6 +18,10 @@ export function AuthProvider({ children }) {
       setTok(t);
       setUsr(u);
       setLoading(false);
+      // Sync data offline ke backend jika ada sesi aktif
+      if (t) {
+        syncPendingData().catch(() => {});
+      }
     })();
   }, []);
 
@@ -26,6 +31,8 @@ export function AuthProvider({ children }) {
     await setUser(res.user);
     setTok(res.token);
     setUsr(res.user);
+    // Sync data offline yang menunggu
+    syncPendingData().catch(() => {});
     return res.user;
   }, []);
 

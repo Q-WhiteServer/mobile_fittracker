@@ -24,6 +24,9 @@ function RootStack() {
       <Stack.Screen name="log/create" options={{ title: 'Catat Latihan' }} />
       <Stack.Screen name="timer" options={{ title: 'Timer Latihan' }} />
       <Stack.Screen name="group/[id]" options={{ title: 'Detail Grup' }} />
+      <Stack.Screen name="group/create" options={{ headerShown: false }} />
+      <Stack.Screen name="group/search" options={{ headerShown: false }} />
+      <Stack.Screen name="group/chat" options={{ headerShown: false }} />
     </Stack>
   );
 }

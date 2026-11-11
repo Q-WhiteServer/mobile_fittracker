@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../api';
 import { getCachedGroups } from '../../localStore';
@@ -83,6 +83,15 @@ export default function GroupDetailScreen() {
       {peranSaya ? (
         <Badge text={peranSaya === 'admin' ? 'Anda Admin' : 'Anda Anggota'} color={colors.success} />
       ) : null}
+
+      {/* Tombol Chat hanya untuk anggota */}
+      {peranSaya && (
+        <Button
+          title="💬 Buka Obrolan Grup"
+          onPress={() => router.push({ pathname: '/group/chat', params: { id, nama: group.nama_group } })}
+          style={{ marginTop: 8 }}
+        />
+      )}
 
       <SectionHeader title={`Anggota (${members.length})`} />
       {members.length === 0 ? (

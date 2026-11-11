@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getPlans } from '../../localStore';
+import { getPlans, refreshPlansFromBackend } from '../../localStore';
 import { Screen, Card, Button, EmptyState } from '../../components/ui';
 import { colors, typography } from '../../theme';
 
@@ -22,7 +22,10 @@ export default function ScheduleScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      (async () => setPlans(await getPlans()))();
+      (async () => {
+        const fresh = await refreshPlansFromBackend();
+        setPlans(fresh ?? await getPlans());
+      })();
     }, [])
   );
 

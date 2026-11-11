@@ -20,9 +20,10 @@ export async function requestNotificationPermissions() {
 }
 
 // Menjadwalkan pengingat harian berulang pada timeStr ("HH:MM").
+// Expo SDK 52+ — trigger harus pakai type: 'daily'
 export async function scheduleReminder(timeStr) {
   const granted = await requestNotificationPermissions();
-  if (!granted) throw new Error('Izin notifikasi belum diberikan.');
+  if (!granted) throw new Error('Izin notifikasi belum diberikan. Aktifkan notifikasi di Pengaturan perangkat.');
   const [h, m] = (timeStr || '17:00').split(':').map(Number);
   await cancelReminder();
   await Notifications.scheduleNotificationAsync({
@@ -32,7 +33,11 @@ export async function scheduleReminder(timeStr) {
       body: 'Pengingat jadwal latihan FitTracker Anda. Ayo mulai sesi hari ini!',
       sound: true,
     },
-    trigger: { hour: h, minute: m, repeats: true },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes?.DAILY ?? 'daily',
+      hour: h,
+      minute: m,
+    },
   });
 }
 
@@ -41,16 +46,20 @@ export async function cancelReminder() {
   await Notifications.cancelScheduledNotificationAsync(REMINDER_ID).catch(() => {});
 }
 
-// Mengirim notifikasi uji coba segera (1 detik).
+// Mengirim notifikasi uji coba segera (3 detik).
 export async function sendTestNotification() {
   const granted = await requestNotificationPermissions();
-  if (!granted) throw new Error('Izin notifikasi belum diberikan.');
+  if (!granted) throw new Error('Izin notifikasi belum diberikan. Aktifkan notifikasi di Pengaturan perangkat.');
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'Pengingat Latihan',
+      title: '🏋️ Pengingat Latihan — Uji Coba',
       body: 'Ini contoh tampilan pengingat jadwal latihan Anda.',
       sound: true,
     },
-    trigger: { seconds: 1 },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes?.TIME_INTERVAL ?? 'timeInterval',
+      seconds: 3,
+      repeats: false,
+    },
   });
 }

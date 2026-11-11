@@ -82,9 +82,27 @@ export const api = {
   getStats: () => request('/stats', { method: 'GET' }),
 
   // US-09: Komunitas / grup (online)
-  getGroups: () => request('/groups', { method: 'GET' }),
+  getGroups: (params = {}) => {
+    const q = new URLSearchParams();
+    if (params.kategori) q.set('kategori', params.kategori);
+    if (params.q) q.set('q', params.q);
+    const qs = q.toString();
+    return request(`/groups${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  },
   getGroup: (id) => request(`/groups/${id}`, { method: 'GET' }),
   createGroup: (body) => request('/groups', { method: 'POST', body: JSON.stringify(body) }),
   joinGroup: (id) => request(`/groups/${id}/join`, { method: 'POST' }),
   leaveGroup: (id) => request(`/groups/${id}/leave`, { method: 'POST' }),
+
+  // Group Chat
+  getMessages: (groupId) => request(`/groups/${groupId}/messages`, { method: 'GET' }),
+  sendMessage: (groupId, body) => request(`/groups/${groupId}/messages`, { method: 'POST', body: JSON.stringify(body) }),
+
+  // Laporan bulanan
+  getMonthlyReport: (bulan) => request(`/reports/monthly${bulan ? `?bulan=${bulan}` : ''}`, { method: 'GET' }),
+
+  // Weight log
+  getWeights: (bulan) => request(`/weight${bulan ? `?bulan=${bulan}` : ''}`, { method: 'GET' }),
+  logWeight: (body) => request('/weight', { method: 'POST', body: JSON.stringify(body) }),
+  deleteWeight: (tanggal) => request(`/weight/${tanggal}`, { method: 'DELETE' }),
 };

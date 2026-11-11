@@ -236,3 +236,151 @@ export async function cacheGroups(list) {
 export async function getCachedGroups() {
   return (await getJSON(KEYS.GROUPS)) || [];
 }
+
+// ===========================================================================
+// REFRESH DARI BACKEND — tarik data terbaru server, replace lokal
+// Dipanggil di useFocusEffect layar utama agar selalu konsisten.
+// ===========================================================================
+export async function refreshLogsFromBackend() {
+  try {
+    const res = await api.getLogs();
+    if (res && Array.isArray(res.logs)) {
+      // Map ke format lokal agar kompatibel dengan field lokal
+      const mapped = res.logs.map((l) => ({
+        id: String(l.id_log),          // lokal pakai "id"
+        id_log: l.id_log,              // backend id untuk delete
+        id_exercise: l.id_exercise,
+        nama_gerakan: l.nama_gerakan || null,
+        kategori: l.kategori || null,
+        jumlah_set: l.jumlah_set,
+        reps: l.reps,
+        beban: l.beban,
+        durasi: l.durasi,
+        catatan: l.catatan,
+        tanggal: l.tanggal,
+        created_at: l.created_at,
+      }));
+      await setJSON(KEYS.LOGS, mapped);
+      return mapped;
+    }
+  } catch (e) {
+    console.warn('[refresh] Gagal refresh logs dari backend:', e.message);
+  }
+  return null; // null = gunakan data lokal
+}
+
+export async function refreshPlansFromBackend() {
+  try {
+    const res = await api.getPlans();
+    if (res && Array.isArray(res.plans)) {
+      const mapped = res.plans.map((p) => ({
+        id: String(p.id_plan),
+        id_plan: p.id_plan,
+        nama_plan: p.nama_plan,
+        tanggal: p.tanggal,
+        hari: p.hari,
+        catatan: p.catatan,
+        exercises: [],               // detail exercises dimuat di plan/[id]
+        jumlah_latihan: p.jumlah_latihan,
+        created_at: p.created_at,
+      }));
+      await setJSON(KEYS.PLANS, mapped);
+      return mapped;
+    }
+  } catch (e) {
+    console.warn('[refresh] Gagal refresh plans dari backend:', e.message);
+  }
+  return null;
+}
+
+// ===========================================================================
+// SINKRONISASI PENDING — kirim data lokal yang belum masuk backend
+// Dipanggil saat login / sesi dimuat agar data offline tersinkron otomatis.
+// ===========================================================================
+export async function syncPendingData() {
+  let synced = 0;
+
+  // --- Sync plans yang belum punya id_plan dari backend ---
+  try {
+    const plans = await getPlans();
+    let plansUpdated = false;
+
+    for (const plan of plans) {
+      if (plan.id_plan) continue; // sudah tersinkron
+      try {
+        const res = await api.createPlan({
+          nama_plan: plan.nama_plan,
+          tanggal: plan.tanggal,
+          hari: plan.hari,
+          catatan: plan.catatan,
+          exercises: (plan.exercises || []).map((ex) => ({
+            id_exercise: ex.id_exercise ? Number(ex.id_exercise) : null,
+            target_set: ex.target_set,
+            target_reps: ex.target_reps,
+          })),
+        });
+        if (res && res.id_plan) {
+          plan.id_plan = res.id_plan;
+          plansUpdated = true;
+          synced++;
+          console.log('[sync] Plan tersinkron:', plan.nama_plan, '→ id_plan', res.id_plan);
+        }
+      } catch (e) {
+        console.warn('[sync] Gagal sync plan:', plan.nama_plan, e.message);
+      }
+    }
+
+    if (plansUpdated) {
+      await setJSON(KEYS.PLANS, plans);
+    }
+  } catch (e) {
+    console.warn('[sync] Error saat sync plans:', e.message);
+  }
+
+  // --- Sync logs yang belum punya id_log dari backend ---
+  try {
+    const logs = await getLogs();
+    let logsUpdated = false;
+
+    // Logs diurutkan terbaru dulu — sync dari yang terlama ke terbaru
+    const logsToSync = [...logs].reverse();
+
+    for (const log of logsToSync) {
+      if (log.id_log) continue; // sudah tersinkron
+      try {
+        const res = await api.createLog({
+          id_plan: log.id_plan || null,
+          id_exercise: log.id_exercise ? Number(log.id_exercise) : null,
+          jumlah_set: log.jumlah_set,
+          reps: log.reps,
+          beban: log.beban,
+          durasi: log.durasi,
+          catatan: log.catatan,
+          tanggal: log.tanggal,
+        });
+        if (res && res.id_log) {
+          log.id_log = res.id_log;
+          logsUpdated = true;
+          synced++;
+          console.log('[sync] Log tersinkron:', log.nama_gerakan, '→ id_log', res.id_log);
+        }
+      } catch (e) {
+        console.warn('[sync] Gagal sync log:', log.nama_gerakan, e.message);
+      }
+    }
+
+    if (logsUpdated) {
+      // Simpan kembali dalam urutan semula (terbaru dulu)
+      const updatedMap = Object.fromEntries(logsToSync.map((l) => [l.id, l]));
+      const mergedLogs = logs.map((l) => updatedMap[l.id] || l);
+      await setJSON(KEYS.LOGS, mergedLogs);
+    }
+  } catch (e) {
+    console.warn('[sync] Error saat sync logs:', e.message);
+  }
+
+  if (synced > 0) {
+    console.log(`[sync] Selesai: ${synced} item tersinkron ke backend.`);
+  }
+  return synced;
+}

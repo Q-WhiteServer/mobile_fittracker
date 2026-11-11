@@ -595,18 +595,28 @@ app.get('/stats', authMiddleware, async (req, res) => {
 // US-09: KOMUNITAS / WORKOUT GROUP
 // ===========================================================================
 
-// GET /groups -> daftar semua grup
+// GET /groups -> daftar semua grup (opsional filter kategori & cari nama)
 app.get('/groups', authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT g.*, u.nama_lengkap AS pembuat,
+    const kategori = str(req.query.kategori);
+    const q = str(req.query.q);
+    let sql = `SELECT g.*, u.nama_lengkap AS pembuat,
         (SELECT COUNT(*) FROM group_members gm WHERE gm.id_group = g.id_group) AS jumlah_anggota,
         EXISTS(SELECT 1 FROM group_members gm WHERE gm.id_group = g.id_group AND gm.id_user = ?) AS sudah_gabung
        FROM \`groups\` g
        JOIN users u ON u.id_user = g.id_pembuat
-       ORDER BY g.tanggal_dibuat DESC`,
-      [req.user.id_user]
-    );
+       WHERE 1=1`;
+    const params = [req.user.id_user];
+    if (kategori && kategori !== 'Semua') {
+      sql += ' AND g.kategori = ?';
+      params.push(kategori);
+    }
+    if (q) {
+      sql += ' AND g.nama_group LIKE ?';
+      params.push(`%${q}%`);
+    }
+    sql += ' ORDER BY g.tanggal_dibuat DESC';
+    const [rows] = await pool.query(sql, params);
     return res.json({ groups: rows });
   } catch (error) {
     console.error('❌ Error /groups:', error.message);
@@ -640,7 +650,7 @@ app.get('/groups/:id', authMiddleware, async (req, res) => {
 
 // POST /groups -> buat grup baru (pembuat otomatis menjadi admin)
 app.post('/groups', authMiddleware, async (req, res) => {
-  const { nama_group, deskripsi } = req.body || {};
+  const { nama_group, deskripsi, kategori, privasi } = req.body || {};
   if (!nama_group || !String(nama_group).trim()) {
     return res.status(400).json({ pesan: 'Nama grup wajib diisi.' });
   }
@@ -648,8 +658,14 @@ app.post('/groups', authMiddleware, async (req, res) => {
   try {
     await conn.beginTransaction();
     const [result] = await conn.query(
-      'INSERT INTO `groups` (nama_group, deskripsi, id_pembuat) VALUES (?, ?, ?)',
-      [String(nama_group).trim(), deskripsi || null, req.user.id_user]
+      'INSERT INTO `groups` (nama_group, deskripsi, kategori, privasi, id_pembuat) VALUES (?, ?, ?, ?, ?)',
+      [
+        String(nama_group).trim(),
+        deskripsi || null,
+        kategori || 'Umum',
+        ['publik', 'privat'].includes(privasi) ? privasi : 'publik',
+        req.user.id_user,
+      ]
     );
     const id_group = result.insertId;
     await conn.query(
@@ -693,6 +709,202 @@ app.post('/groups/:id/leave', authMiddleware, async (req, res) => {
     return res.json({ pesan: 'Anda keluar dari grup.' });
   } catch (error) {
     console.error('❌ Error POST /groups/:id/leave:', error.message);
+    return res.status(500).json({ pesan: 'Terjadi kesalahan pada server.' });
+  }
+});
+
+// ===========================================================================
+// GROUP CHAT / OBROLAN KOMUNITAS
+// ===========================================================================
+
+// GET /groups/:id/messages -> ambil pesan (100 terakhir)
+app.get('/groups/:id/messages', authMiddleware, async (req, res) => {
+  try {
+    // Hanya anggota yang bisa baca
+    const [member] = await pool.query('SELECT id_member FROM group_members WHERE id_group = ? AND id_user = ?', [req.params.id, req.user.id_user]);
+    if (member.length === 0) {
+      return res.status(403).json({ pesan: 'Hanya anggota grup yang dapat membaca pesan.' });
+    }
+    const [rows] = await pool.query(
+      `SELECT m.id_message, m.pesan, m.reply_to, m.created_at,
+              u.id_user, u.nama_lengkap,
+              gm.peran,
+              r.pesan AS reply_pesan, ru.nama_lengkap AS reply_nama
+       FROM group_messages m
+       JOIN users u ON u.id_user = m.id_user
+       JOIN group_members gm ON gm.id_group = m.id_group AND gm.id_user = m.id_user
+       LEFT JOIN group_messages r ON r.id_message = m.reply_to
+       LEFT JOIN users ru ON ru.id_user = r.id_user
+       WHERE m.id_group = ?
+       ORDER BY m.created_at DESC
+       LIMIT 100`,
+      [req.params.id]
+    );
+    return res.json({ messages: rows.reverse() }); // urut terlama ke terbaru
+  } catch (error) {
+    console.error('❌ Error GET /groups/:id/messages:', error.message);
+    return res.status(500).json({ pesan: 'Terjadi kesalahan pada server.' });
+  }
+});
+
+// POST /groups/:id/messages -> kirim pesan
+app.post('/groups/:id/messages', authMiddleware, async (req, res) => {
+  const { pesan, reply_to } = req.body || {};
+  if (!pesan || !String(pesan).trim()) {
+    return res.status(400).json({ pesan: 'Pesan tidak boleh kosong.' });
+  }
+  try {
+    const [member] = await pool.query('SELECT id_member FROM group_members WHERE id_group = ? AND id_user = ?', [req.params.id, req.user.id_user]);
+    if (member.length === 0) {
+      return res.status(403).json({ pesan: 'Hanya anggota grup yang dapat mengirim pesan.' });
+    }
+    const [result] = await pool.query(
+      'INSERT INTO group_messages (id_group, id_user, pesan, reply_to) VALUES (?, ?, ?, ?)',
+      [req.params.id, req.user.id_user, String(pesan).trim(), reply_to || null]
+    );
+    return res.status(201).json({ pesan: 'Pesan terkirim.', id_message: result.insertId });
+  } catch (error) {
+    console.error('❌ Error POST /groups/:id/messages:', error.message);
+    return res.status(500).json({ pesan: 'Terjadi kesalahan pada server.' });
+  }
+});
+
+// ===========================================================================
+// WEIGHT LOG — riwayat berat badan untuk grafik laporan
+// ===========================================================================
+
+// GET /weight -> ambil semua catatan berat user (opsional filter bulan YYYY-MM)
+app.get('/weight', authMiddleware, async (req, res) => {
+  try {
+    const bulan = str(req.query.bulan);
+    let sql = 'SELECT * FROM weight_logs WHERE id_user = ?';
+    const params = [req.user.id_user];
+    if (bulan) {
+      const [y, m] = bulan.split('-');
+      sql += ' AND YEAR(tanggal) = ? AND MONTH(tanggal) = ?';
+      params.push(y, m);
+    }
+    sql += ' ORDER BY tanggal ASC';
+    const [rows] = await pool.query(sql, params);
+    return res.json({ weights: rows });
+  } catch (error) {
+    console.error('❌ Error GET /weight:', error.message);
+    return res.status(500).json({ pesan: 'Terjadi kesalahan pada server.' });
+  }
+});
+
+// POST /weight -> catat atau update berat untuk tanggal tertentu (upsert)
+app.post('/weight', authMiddleware, async (req, res) => {
+  const { berat, tanggal, catatan } = req.body || {};
+  if (!berat || isNaN(berat) || berat < 20 || berat > 500) {
+    return res.status(400).json({ pesan: 'Berat tidak valid (20–500 kg).' });
+  }
+  if (!tanggal) {
+    return res.status(400).json({ pesan: 'Tanggal wajib diisi.' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO weight_logs (id_user, berat, tanggal, catatan)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE berat = VALUES(berat), catatan = VALUES(catatan)`,
+      [req.user.id_user, berat, tanggal, catatan || null]
+    );
+    // Sync berat terkini ke user_profiles (hanya update jika sudah ada row)
+    await pool.query(
+      `UPDATE user_profiles SET berat = ? WHERE id_user = ?`,
+      [berat, req.user.id_user]
+    );
+    return res.status(201).json({ pesan: 'Berat berhasil dicatat.' });
+  } catch (error) {
+    console.error('❌ Error POST /weight:', error.message);
+    return res.status(500).json({ pesan: 'Terjadi kesalahan pada server.' });
+  }
+});
+
+// DELETE /weight/:tanggal -> hapus catatan berat tanggal tertentu
+app.delete('/weight/:tanggal', authMiddleware, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM weight_logs WHERE id_user = ? AND tanggal = ?', [req.user.id_user, req.params.tanggal]);
+    return res.json({ pesan: 'Catatan berat dihapus.' });
+  } catch (error) {
+    console.error('❌ Error DELETE /weight:', error.message);
+    return res.status(500).json({ pesan: 'Terjadi kesalahan pada server.' });
+  }
+});
+
+// ===========================================================================
+// LAPORAN / STATISTIK BULANAN
+// ===========================================================================
+
+// GET /reports/monthly?bulan=2026-10 -> ringkasan per bulan
+app.get('/reports/monthly', authMiddleware, async (req, res) => {
+  try {
+    const bulan = str(req.query.bulan) || new Date().toISOString().slice(0, 7); // YYYY-MM
+    const [bulanY, bulanM] = bulan.split('-');
+
+    // Total sesi, durasi, estimasi kalori
+    const [summary] = await pool.query(
+      `SELECT
+         COUNT(*) AS total_sesi,
+         COALESCE(SUM(durasi), 0) AS total_durasi_detik,
+         COALESCE(SUM(jumlah_set * reps * 0.3), 0) AS estimasi_kalori
+       FROM workout_logs
+       WHERE id_user = ? AND YEAR(tanggal) = ? AND MONTH(tanggal) = ?`,
+      [req.user.id_user, bulanY, bulanM]
+    );
+
+    // Tanggal yang ada latihan (untuk kalender)
+    const [days] = await pool.query(
+      `SELECT DAY(CONVERT_TZ(tanggal, '+00:00', '+07:00')) AS hari, COUNT(*) AS sesi
+       FROM workout_logs
+       WHERE id_user = ? AND YEAR(tanggal) = ? AND MONTH(tanggal) = ?
+       GROUP BY DAY(CONVERT_TZ(tanggal, '+00:00', '+07:00'))`,
+      [req.user.id_user, bulanY, bulanM]
+    );
+
+    // Riwayat latihan bulan ini
+    const [history] = await pool.query(
+      `SELECT l.id_log,
+              DATE_FORMAT(l.tanggal, '%Y-%m-%d') AS tanggal,
+              l.jumlah_set, l.reps, l.durasi,
+              l.beban, l.catatan, e.nama_gerakan, e.kategori,
+              p.nama_plan
+       FROM workout_logs l
+       LEFT JOIN exercises e ON e.id_exercise = l.id_exercise
+       LEFT JOIN workout_plans p ON p.id_plan = l.id_plan
+       WHERE l.id_user = ? AND YEAR(l.tanggal) = ? AND MONTH(l.tanggal) = ?
+       ORDER BY l.tanggal DESC, l.id_log DESC`,
+      [req.user.id_user, bulanY, bulanM]
+    );
+
+    // Data berat untuk grafik (dari weight_logs bulan ini)
+    const [weightRows] = await pool.query(
+      `SELECT berat, DATE_FORMAT(tanggal, '%Y-%m-%d') AS tanggal
+       FROM weight_logs WHERE id_user = ? AND YEAR(tanggal) = ? AND MONTH(tanggal) = ?
+       ORDER BY tanggal ASC`,
+      [req.user.id_user, bulanY, bulanM]
+    );
+    // Berat terkini dari user_profiles sebagai fallback
+    const [profil] = await pool.query('SELECT berat FROM user_profiles WHERE id_user = ?', [req.user.id_user]);
+    // Hitung selisih berat dalam bulan ini
+    let beratDelta = null;
+    if (weightRows.length >= 2) {
+      beratDelta = Number(weightRows[weightRows.length - 1].berat) - Number(weightRows[0].berat);
+    }
+
+    return res.json({
+      bulan,
+      summary: summary[0],
+      hari_latihan: days,
+      history,
+      berat_saat_ini: weightRows.length > 0
+        ? weightRows[weightRows.length - 1].berat
+        : profil[0]?.berat || null,
+      berat_delta: beratDelta,
+      weight_history: weightRows,
+    });
+  } catch (error) {
+    console.error('❌ Error GET /reports/monthly:', error.message);
     return res.status(500).json({ pesan: 'Terjadi kesalahan pada server.' });
   }
 });

@@ -3,7 +3,7 @@ import { View, Text, Pressable, StyleSheet, Alert } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { getStats, getLogs } from '../../localStore';
+import { getStats, getLogs, refreshLogsFromBackend } from '../../localStore';
 import { Screen, Card, SectionHeader, Button, EmptyState } from '../../components/ui';
 import { colors, typography } from '../../theme';
 
@@ -15,9 +15,11 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       (async () => {
-        setStats(await getStats());
-        const logs = await getLogs();
+        // Coba ambil dari backend dulu, fallback ke lokal
+        const fresh = await refreshLogsFromBackend();
+        const logs = fresh ?? await getLogs();
         setRecent(logs.slice(0, 5));
+        setStats(await getStats());
       })();
     }, [])
   );
@@ -54,6 +56,7 @@ export default function HomeScreen() {
         <QuickAction label="Katalog" icon="barbell-outline" onPress={() => router.push('/exercises')} />
         <QuickAction label="Catat" icon="create-outline" onPress={() => router.push('/log/create')} />
         <QuickAction label="Jadwal" icon="add-circle-outline" onPress={() => router.push('/plan/create')} />
+        <QuickAction label="Laporan" icon="bar-chart-outline" onPress={() => router.push('/reports')} />
       </View>
 
       <SectionHeader

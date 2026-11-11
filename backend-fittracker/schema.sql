@@ -27,7 +27,9 @@ DROP TABLE IF EXISTS workout_logs;
 DROP TABLE IF EXISTS plan_exercises;
 DROP TABLE IF EXISTS workout_plans;
 DROP TABLE IF EXISTS `group_members`;
+DROP TABLE IF EXISTS group_messages;
 DROP TABLE IF EXISTS `groups`;
+DROP TABLE IF EXISTS weight_logs;
 DROP TABLE IF EXISTS user_profiles;
 DROP TABLE IF EXISTS exercises;
 DROP TABLE IF EXISTS users;
@@ -142,7 +144,10 @@ CREATE TABLE IF NOT EXISTS `groups` (
   id_group      INT AUTO_INCREMENT PRIMARY KEY,
   nama_group    VARCHAR(150) NOT NULL,
   deskripsi     TEXT DEFAULT NULL,
-  id_pembuat    INT NOT NULL,                         -- user pembuat grup
+  kategori      VARCHAR(50) DEFAULT 'Umum',          -- Lari, Kekuatan, Yoga, Bersepeda, Umum
+  privasi       ENUM('publik','privat') DEFAULT 'publik',
+  foto_url      VARCHAR(255) DEFAULT NULL,
+  id_pembuat    INT NOT NULL,
   tanggal_dibuat TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_group_creator FOREIGN KEY (id_pembuat)
     REFERENCES users(id_user) ON DELETE CASCADE
@@ -159,6 +164,39 @@ CREATE TABLE IF NOT EXISTS group_members (
     REFERENCES `groups`(id_group) ON DELETE CASCADE,
   CONSTRAINT fk_gm_user FOREIGN KEY (id_user)
     REFERENCES users(id_user) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ===========================================================================
+-- Weight Log — histori berat badan per tanggal (untuk grafik Laporan)
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS weight_logs (
+  id_weight    INT AUTO_INCREMENT PRIMARY KEY,
+  id_user      INT NOT NULL,
+  berat        DECIMAL(5,2) NOT NULL,              -- kg
+  tanggal      DATE NOT NULL,
+  catatan      VARCHAR(255) DEFAULT NULL,
+  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_date (id_user, tanggal),
+  CONSTRAINT fk_wl_user FOREIGN KEY (id_user)
+    REFERENCES users(id_user) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ===========================================================================
+-- Group Chat / Obrolan komunitas (US-09)
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS group_messages (
+  id_message   INT AUTO_INCREMENT PRIMARY KEY,
+  id_group     INT NOT NULL,
+  id_user      INT NOT NULL,
+  pesan        TEXT NOT NULL,
+  reply_to     INT DEFAULT NULL,                 -- id_message yang dibalas (opsional)
+  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_msg_group FOREIGN KEY (id_group)
+    REFERENCES `groups`(id_group) ON DELETE CASCADE,
+  CONSTRAINT fk_msg_user FOREIGN KEY (id_user)
+    REFERENCES users(id_user) ON DELETE CASCADE,
+  CONSTRAINT fk_msg_reply FOREIGN KEY (reply_to)
+    REFERENCES group_messages(id_message) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ===========================================================================
