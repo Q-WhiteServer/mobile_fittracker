@@ -10,6 +10,7 @@ export const KEYS = {
   LOGS: '@fittracker_logs',
   GROUPS: '@fittracker_groups',
   SETTINGS: '@fittracker_settings',
+  ONBOARDING: '@fittracker_onboarding_done',
 };
 
 // --- Token & user (sesi login) ---
