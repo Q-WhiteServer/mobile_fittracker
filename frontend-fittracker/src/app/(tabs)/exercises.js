@@ -1,539 +1,380 @@
-import { useState, useCallback, useMemo } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Image } from 'react-native';
-import { useFocusEffect, router } from 'expo-router';
+/**
+ * exercises.js — Tab "Temukan" (Discover)
+ *
+ * Halaman eksplorasi latihan & program:
+ * - Search bar
+ * - Filter chip horizontal
+ * - Grid rekomendasi program (2 kolom)
+ * - Daftar peregangan (horizontal cards)
+ */
+
+import { useState, useMemo } from 'react';
+import {
+  View, Text, Pressable, ScrollView, StyleSheet,
+  TextInput, Image,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from '../../api';
-import { cacheExercises, getCachedExercises } from '../../localStore';
-import { Card, Chip, Badge, Field, EmptyState, Loading } from '../../components/ui';
-import { colors, typography } from '../../theme';
+import { colors } from '../../theme';
 
-const FOKUS_LIST = ['Semua', 'Otot Perut', 'Lengan', 'Dada', 'Seluruh tubuh'];
-const LEVEL_LIST = ['Semua', 'Rendah', 'Menengah', 'Atas'];
+// ── Aset lokal ──────────────────────────────────────────────────────────────
+// Pakai try-require agar tidak crash jika file belum ada
+let IMG_KEKUATAN = null;
+let IMG_KARDIO   = null;
+try { IMG_KEKUATAN = require('../../../assets/olahraga.jpg'); } catch {}
+// Kardio juga pakai olahraga.jpg agar tidak ada teks overlay
+IMG_KARDIO = IMG_KEKUATAN;
 
-const MOCK_PROGRAMS = [
+// ── Data statis ─────────────────────────────────────────────────────────────
+const FILTERS = ['Untukmu', 'Kekuatan', 'Kardio', 'Yoga'];
+
+const ALL_PROGRAMS = [
   {
     id: '1',
-    title: 'Core Aktif',
-    meta: 'Otot Perut • Menengah • 15 menit',
-    offline: true,
-    icon: 'flame-outline',
+    img:      IMG_KEKUATAN,
+    kategori: 'Kekuatan',
+    fokus:    'Seluruh tubuh',
+    judul:    'Kuat dari Rumah',
+    meta:     '20 menit • Rendah',
+    offline:  true,
+    filter:   ['Untukmu', 'Kekuatan'],
+    bookmarked: false,
   },
   {
     id: '2',
-    title: 'Plank & Stabilitas',
-    meta: 'Otot Perut • Menengah • 8 menit',
-    offline: true,
-    icon: 'pulse-outline',
+    img:      IMG_KARDIO,
+    kategori: 'Kardio',
+    fokus:    'Seluruh tubuh',
+    judul:    'Kardio Tanpa Alat',
+    meta:     '15 menit • Menengah',
+    offline:  true,
+    filter:   ['Untukmu', 'Kardio'],
+    bookmarked: false,
+  },
+  {
+    id: '3',
+    img:      null,
+    kategori: 'Yoga',
+    fokus:    'Fleksibilitas',
+    judul:    'Yoga Pagi',
+    meta:     '20 menit • Rendah',
+    offline:  false,
+    filter:   ['Yoga'],
+    bookmarked: false,
+  },
+  {
+    id: '4',
+    img:      IMG_KEKUATAN,
+    kategori: 'Kekuatan',
+    fokus:    'Lengan',
+    judul:    'Upper Body Blast',
+    meta:     '25 menit • Menengah',
+    offline:  true,
+    filter:   ['Kekuatan'],
+    bookmarked: false,
   },
 ];
 
-const WEEK_DAYS = [
-  { day: 'Sen', date: '12' },
-  { day: 'Sel', date: '13' },
-  { day: 'Rab', date: '14', active: true },
-  { day: 'Kam', date: '15' },
-  { day: 'Jum', date: '16' },
-  { day: 'Sab', date: '17' },
-  { day: 'Min', date: '18' },
+const PEREGANGAN = [
+  {
+    id: 'p1',
+    icon:     'sunny-outline',
+    iconBg:   '#FEF3C7',
+    iconColor:'#D97706',
+    label:    'Pemanasan / Warm-up',
+    judul:    'Siap Bergerak',
+    meta:     '5 menit • Dinamis • Rendah',
+    offline:  true,
+  },
+  {
+    id: 'p2',
+    icon:     'leaf-outline',
+    iconBg:   '#E0F2FE',
+    iconColor:'#0369A1',
+    label:    'Pendinginan / Cool-down',
+    judul:    'Rileks & Pulih',
+    meta:     '8 menit • Statis • Rendah',
+    offline:  true,
+  },
 ];
 
-const OLAHRAGA_IMG = null; // Ganti dengan require setelah bundler clear
-
-export default function ExercisesScreen() {
-  const [exercises, setExercises] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [offline, setOffline] = useState(false);
-  const [fokus, setFokus] = useState('Semua');
-  const [level, setLevel] = useState('Semua');
-  const [q, setQ] = useState('');
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await api.getExercises({});
-      setExercises(res.exercises || []);
-      await cacheExercises(res.exercises || []);
-      setOffline(false);
-    } catch (e) {
-      setOffline(true);
-      setExercises(await getCachedExercises());
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
-
-  const filtered = useMemo(() => {
-    return exercises.filter((ex) => {
-      if (fokus !== 'Semua' && ex.kategori !== fokus) return false;
-      if (level !== 'Semua' && ex.level_kesulitan !== level) return false;
-      if (q && !ex.nama_gerakan.toLowerCase().includes(q.toLowerCase())) return false;
-      return true;
-    });
-  }, [exercises, fokus, level, q]);
-
+// ── Komponen kartu program — statis, tidak bisa diklik ──────────────────────
+function ProgramCard({ item }) {
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: '#FFFFFF' }}
-      contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* ── Top Bar / Header ── */}
-      <View style={styles.topHeader}>
-        <View>
-          <Text style={styles.dateHeader}>Rabu, 14 Oktober 2026</Text>
-          <Text style={styles.greetingHeader}>Halo, Valentina. Siap bergerak?</Text>
-        </View>
-        <View style={styles.avatarBox}>
-          <Text style={styles.avatarText}>VM</Text>
+    <View style={s.programCard}>
+      {/* Gambar */}
+      <View style={s.programImgWrap}>
+        {item.img ? (
+          <Image source={item.img} style={s.programImg} resizeMode="cover" />
+        ) : (
+          <View style={[s.programImg, { backgroundColor: colors.primary, opacity: 0.7 }]} />
+        )}
+        {/* Ikon bookmark dekoratif */}
+        <View style={s.bookmarkBtn}>
+          <Ionicons
+            name={item.bookmarked ? 'bookmark' : 'bookmark-outline'}
+            size={16}
+            color="#FFF"
+          />
         </View>
       </View>
 
-      <Text style={styles.mainTitle}>Latihan</Text>
-
-      {/* ── Kalender Mingguan ── */}
-      <View style={styles.calendarHeaderRow}>
-        <Text style={styles.calendarMonth}>Oktober 2026</Text>
-        <Text style={styles.calendarRange}>12–18 Okt</Text>
-      </View>
-      <View style={styles.weekContainer}>
-        {WEEK_DAYS.map((item, index) => (
-          <View
-            key={index}
-            style={[styles.weekDayBox, item.active && styles.weekDayBoxActive]}
-          >
-            <Text style={[styles.weekDayName, item.active && styles.textActive]}>
-              {item.day}
-            </Text>
-            <Text style={[styles.weekDayNum, item.active && styles.textActive]}>
-              {item.date}
-            </Text>
-            {item.active && <View style={styles.activeDot} />}
-          </View>
-        ))}
-      </View>
-
-      {/* ── Target Mingguan ── */}
-      <View style={styles.targetCard}>
-        <View style={styles.targetRow}>
-          <Text style={styles.targetTitle}>Target mingguan</Text>
-          <Text style={styles.targetValue}>2 / 4 latihan</Text>
-        </View>
-        <View style={styles.progressBarBg}>
-          <View style={styles.progressBarFill} />
-        </View>
-        <Text style={styles.targetSubtitle}>
-          Dua sesi lagi untuk mencapai targetmu!
+      {/* Info */}
+      <View style={s.programInfo}>
+        <Text style={s.programKategori} numberOfLines={1}>
+          {item.kategori} • {item.fokus}
         </Text>
-      </View>
-
-      {/* ── Jadwal Hari Ini ── */}
-      <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>Jadwal hari ini</Text>
-        <Pressable>
-          <Text style={styles.linkGreen}>Lihat jadwal</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.scheduleCard}>
-        <View style={styles.scheduleImageWrap}>
-          {/* Menggunakan asset olahraga.jpg */}
-          {OLAHRAGA_IMG ? (
-            <Image
-              source={OLAHRAGA_IMG}
-              style={styles.scheduleImg}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={[styles.scheduleImg, { backgroundColor: colors.primary, opacity: 0.85 }]} />
-          )}
-          <View style={styles.durationBadge}>
-            <Ionicons name="time-outline" size={14} color="#111827" />
-            <Text style={styles.durationText}>25 menit</Text>
+        <Text style={s.programJudul} numberOfLines={2}>{item.judul}</Text>
+        <Text style={s.programMeta} numberOfLines={1}>{item.meta}</Text>
+        {item.offline && (
+          <View style={s.offlineRow}>
+            <Ionicons name="cloud-download-outline" size={11} color={colors.primary} />
+            <Text style={s.offlineTxt}>Offline</Text>
           </View>
-        </View>
-        <View style={styles.scheduleContent}>
-          <View style={styles.scheduleSubRow}>
-            <Text style={styles.scheduleInfo}>18.00 • Latihan di rumah</Text>
-            <View style={styles.offlineRow}>
-              <Ionicons name="cloud-download-outline" size={12} color="#059669" />
-              <Text style={styles.offlineText}>Offline</Text>
-            </View>
-          </View>
-          <Text style={styles.scheduleMainTitle}>Core & Kekuatan</Text>
-          <Text style={styles.scheduleMeta}>
-            Otot Perut • Menengah • 6 gerakan
-          </Text>
-
-          <Pressable style={styles.startButton} onPress={() => router.push('/timer')}>
-            <Ionicons name="play" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.startText}>Mulai latihan</Text>
-          </Pressable>
-        </View>
+        )}
       </View>
-
-      {/* ── Tombol Sesuaikan Latihan ── */}
-      <Pressable style={styles.customCard} onPress={() => router.push('/plan/create')}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View style={styles.customIconBox}>
-            <Ionicons name="options-outline" size={20} color={colors.primary} />
-          </View>
-          <View style={{ marginLeft: 12 }}>
-            <Text style={styles.customTitle}>Sesuaikan Latihan</Text>
-            <Text style={styles.customSubtitle}>Susun program versimu sendiri.</Text>
-          </View>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={colors.primary} />
-      </Pressable>
-
-      {/* ── Temukan Latihan yang Pas ── */}
-      <Text style={[styles.sectionTitle, { marginTop: 10 }]}>
-        Temukan latihan yang pas
-      </Text>
-      <Text style={styles.filterLabel}>Fokus otot</Text>
-      <View style={styles.chips}>
-        {FOKUS_LIST.map((k) => (
-          <Chip key={k} label={k} active={fokus === k} onPress={() => setFokus(k)} />
-        ))}
-      </View>
-
-      <Text style={styles.filterLabel}>Tingkat kesulitan</Text>
-      <View style={styles.chips}>
-        {LEVEL_LIST.map((l) => (
-          <Chip key={l} label={l} active={level === l} onPress={() => setLevel(l)} />
-        ))}
-      </View>
-
-      {/* ── Pilihan Untukmu ── */}
-      <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>Pilihan untukmu</Text>
-        <Text style={styles.programCountText}>2 program</Text>
-      </View>
-
-      {MOCK_PROGRAMS.map((prog) => (
-        <Pressable key={prog.id} style={styles.programCard}>
-          <View style={styles.programIconBox}>
-            <Ionicons name={prog.icon} size={22} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1, marginLeft: 14 }}>
-            <Text style={styles.programTitle}>{prog.title}</Text>
-            <Text style={styles.programMeta}>{prog.meta}</Text>
-            <View style={styles.offlineRow}>
-              <Ionicons name="cloud-download-outline" size={12} color="#059669" />
-              <Text style={styles.offlineText}>Tersedia offline</Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-        </Pressable>
-      ))}
-    </ScrollView>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  topHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+// ── Komponen kartu peregangan — statis, tidak bisa diklik ───────────────────
+function PeregangCard({ item }) {
+  return (
+    <View style={s.peregCard}>
+      <View style={[s.peregIconBox, { backgroundColor: item.iconBg }]}>
+        <Ionicons name={item.icon} size={22} color={item.iconColor} />
+      </View>
+      <View style={{ flex: 1, marginLeft: 14 }}>
+        <Text style={s.peregLabel}>{item.label}</Text>
+        <Text style={s.peregJudul}>{item.judul}</Text>
+        <Text style={s.peregMeta}>{item.meta}</Text>
+        {item.offline && (
+          <View style={s.offlineRow}>
+            <Ionicons name="cloud-download-outline" size={11} color={colors.primary} />
+            <Text style={s.offlineTxt}>Tersedia offline</Text>
+          </View>
+        )}
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+    </View>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+export default function DiscoverScreen() {
+  const [query,        setQuery]   = useState('');
+  const [activeFilter, setFilter]  = useState('Untukmu');
+  const [programs]                 = useState(ALL_PROGRAMS);
+
+  // Filter + search
+  const filtered = useMemo(() => {
+    return programs.filter((p) => {
+      const matchFilter = p.filter.includes(activeFilter);
+      const matchQuery  = query.trim() === ''
+        || p.judul.toLowerCase().includes(query.toLowerCase())
+        || p.kategori.toLowerCase().includes(query.toLowerCase())
+        || p.fokus.toLowerCase().includes(query.toLowerCase());
+      return matchFilter && matchQuery;
+    });
+  }, [programs, activeFilter, query]);
+
+  return (
+    <SafeAreaView style={s.safe} edges={['top']}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.scroll}
+      >
+        {/* ── Header ── */}
+        <View style={s.headerRow}>
+          <View>
+            <Text style={s.title}>Temukan</Text>
+            <Text style={s.subtitle}>Gerakan baru, semangat baru.</Text>
+          </View>
+          <Pressable style={s.bookmarkHeaderBtn}>
+            <Ionicons name="bookmark-outline" size={22} color={colors.primary} />
+          </Pressable>
+        </View>
+
+        {/* ── Search Bar ── */}
+        <View style={s.searchBar}>
+          <Ionicons name="search-outline" size={18} color="#9CA3AF" style={s.searchIcon} />
+          <TextInput
+            style={s.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Cari latihan atau program"
+            placeholderTextColor="#9CA3AF"
+            returnKeyType="search"
+          />
+          {query.length > 0 && (
+            <Pressable onPress={() => setQuery('')}>
+              <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+            </Pressable>
+          )}
+        </View>
+
+        {/* ── Filter Chips ── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.chipScroll}
+        >
+          {FILTERS.map((f) => {
+            const active = activeFilter === f;
+            return (
+              <Pressable
+                key={f}
+                style={[s.chip, active && s.chipActive]}
+                onPress={() => setFilter(f)}
+              >
+                <Text style={[s.chipTxt, active && s.chipTxtActive]}>{f}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* ── Rekomendasi Program ── */}
+        <View style={s.sectionRow}>
+          <Text style={s.sectionTitle}>Rekomendasi program</Text>
+          <Pressable>
+            <Text style={s.linkGreen}>Lihat semua</Text>
+          </Pressable>
+        </View>
+
+        {filtered.length === 0 ? (
+          <View style={s.emptyWrap}>
+            <Ionicons name="search-outline" size={40} color="#E5E7EB" />
+            <Text style={s.emptyTxt}>Tidak ada program ditemukan.</Text>
+          </View>
+        ) : (
+          <View style={s.grid}>
+            {filtered.map((item) => (
+              <ProgramCard key={item.id} item={item} />
+            ))}
+          </View>
+        )}
+
+        {/* ── Peregangan ── */}
+        <View style={s.sectionRow}>
+          <Text style={s.sectionTitle}>Peregangan</Text>
+          <Pressable>
+            <Text style={s.linkGreen}>Lihat semua</Text>
+          </Pressable>
+        </View>
+        <Text style={s.sectionDesc}>
+          Siapkan tubuh sebelum latihan, pulihkan setelahnya.
+        </Text>
+
+        {PEREGANGAN.map((item) => (
+          <PeregangCard key={item.id} item={item} />
+        ))}
+
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+const CARD_W = '48%';
+
+const s = StyleSheet.create({
+  safe:   { flex: 1, backgroundColor: '#F9FAFB' },
+  scroll: { paddingBottom: 48 },
+
+  /* Header */
+  headerRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 14,
   },
-  dateHeader: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
+  title:    { fontSize: 28, fontWeight: 'bold', color: '#111827' },
+  subtitle: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  bookmarkHeaderBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#D1FAE5',
+    alignItems: 'center', justifyContent: 'center',
   },
-  greetingHeader: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginTop: 2,
+
+  /* Search */
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#FFFFFF', borderRadius: 14,
+    borderWidth: 1, borderColor: '#E5E7EB',
+    marginHorizontal: 20, marginBottom: 14,
+    paddingHorizontal: 14, height: 50,
   },
-  avatarBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#D1FAE5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#047857',
-  },
-  mainTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 16,
-  },
-  calendarHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  calendarMonth: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  calendarRange: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  weekContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  weekDayBox: {
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 14,
-    backgroundColor: '#F9FAFB',
-    width: '13.5%',
-  },
-  weekDayBoxActive: {
-    backgroundColor: colors.primary,
-  },
-  weekDayName: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  weekDayNum: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  textActive: {
-    color: '#FFFFFF',
-  },
-  activeDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+  searchIcon:  { marginRight: 8 },
+  searchInput: { flex: 1, fontSize: 15, color: '#111827' },
+
+  /* Chips */
+  chipScroll: { paddingHorizontal: 20, paddingBottom: 4 },
+  chip: {
+    paddingHorizontal: 18, paddingVertical: 9,
+    borderRadius: 999, borderWidth: 1.5, borderColor: '#E5E7EB',
     backgroundColor: '#FFFFFF',
-    marginTop: 6,
+    marginRight: 10,
   },
-  targetCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
+  chipActive:    { borderColor: colors.primary, backgroundColor: '#ECFDF5' },
+  chipTxt:       { fontSize: 13, fontWeight: '600', color: '#6B7280' },
+  chipTxtActive: { color: colors.primary },
+
+  /* Section */
+  sectionRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, marginTop: 24, marginBottom: 10,
   },
-  targetRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  targetTitle: {
-    fontSize: 13,
-    color: '#4B5563',
-    fontWeight: '600',
-  },
-  targetValue: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: colors.primary,
-  },
-  progressBarBg: {
-    height: 6,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 3,
-    marginBottom: 8,
-  },
-  progressBarFill: {
-    width: '50%',
-    height: '100%',
-    backgroundColor: colors.primary,
-    borderRadius: 3,
-  },
-  targetSubtitle: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  linkGreen: {
-    fontSize: 13,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  scheduleCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  scheduleImageWrap: {
-    height: 160,
-    backgroundColor: '#E5E7EB',
-    position: 'relative',
-    justifyContent: 'flex-end',
-    padding: 12,
-  },
-  scheduleImg: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  durationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    alignSelf: 'flex-start',
-  },
-  durationText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginLeft: 4,
-  },
-  scheduleContent: {
-    padding: 16,
-  },
-  scheduleSubRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  scheduleInfo: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  offlineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  offlineText: {
-    fontSize: 12,
-    color: '#059669',
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  scheduleMainTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 2,
-  },
-  scheduleMeta: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 14,
-  },
-  startButton: {
-    flexDirection: 'row',
-    backgroundColor: colors.primary,
-    height: 48,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  startText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  customCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1.5,
-    borderColor: '#A7F3D0',
-    backgroundColor: '#ECFDF5',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-  },
-  customIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#D1FAE5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  customTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#065F46',
-  },
-  customSubtitle: {
-    fontSize: 13,
-    color: '#047857',
-    marginTop: 2,
-  },
-  filterLabel: {
-    fontSize: 13,
-    color: '#4B5563',
-    marginBottom: 6,
-    marginTop: 8,
-    fontWeight: '500',
-  },
-  chips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 8,
-  },
-  programCountText: {
-    fontSize: 12,
-    color: '#059669',
-    fontWeight: '600',
+  sectionTitle: { fontSize: 17, fontWeight: 'bold', color: '#111827' },
+  linkGreen:    { fontSize: 13, color: colors.primary, fontWeight: '600' },
+  sectionDesc:  { fontSize: 13, color: '#6B7280', paddingHorizontal: 20, marginBottom: 12, lineHeight: 18 },
+
+  /* Grid program */
+  grid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    paddingHorizontal: 16,
   },
   programCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 16,
-    padding: 14,
+    width: CARD_W,
+    backgroundColor: '#FFFFFF', borderRadius: 16,
+    borderWidth: 1, borderColor: '#E5E7EB',
+    overflow: 'hidden',
     marginBottom: 12,
-    backgroundColor: '#FFFFFF',
+    marginHorizontal: '1%',
   },
-  programIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#ECFDF5',
-    alignItems: 'center',
-    justifyContent: 'center',
+  programImgWrap: { height: 110, position: 'relative' },
+  programImg: {
+    position: 'absolute', top: 0, left: 0,
+    width: '100%', height: '100%',
   },
-  programTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#111827',
+  bookmarkBtn: {
+    position: 'absolute', top: 8, right: 8,
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  programMeta: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
-    marginBottom: 4,
+  programInfo:    { padding: 12 },
+  programKategori:{ fontSize: 11, fontWeight: '700', color: colors.primary, marginBottom: 2 },
+  programJudul:   { fontSize: 14, fontWeight: 'bold', color: '#111827', marginBottom: 4 },
+  programMeta:    { fontSize: 11, color: '#6B7280', marginBottom: 6 },
+
+  /* Peregangan */
+  peregCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#FFFFFF', borderRadius: 16,
+    borderWidth: 1, borderColor: '#E5E7EB',
+    marginHorizontal: 20, marginBottom: 12, padding: 14,
   },
+  peregIconBox: {
+    width: 48, height: 48, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  peregLabel: { fontSize: 11, fontWeight: '700', color: colors.primary, marginBottom: 2 },
+  peregJudul: { fontSize: 15, fontWeight: 'bold', color: '#111827', marginBottom: 2 },
+  peregMeta:  { fontSize: 12, color: '#6B7280', marginBottom: 4 },
+
+  /* Shared */
+  offlineRow: { flexDirection: 'row', alignItems: 'center' },
+  offlineTxt: { fontSize: 11, color: colors.primary, marginLeft: 4, fontWeight: '500' },
+
+  /* Empty */
+  emptyWrap: { alignItems: 'center', paddingVertical: 32 },
+  emptyTxt:  { fontSize: 14, color: '#9CA3AF', marginTop: 10 },
 });
