@@ -12,7 +12,7 @@
 
 import { KEYS, getJSON, setJSON } from './storage';
 import {
-  getOfflineQueue, clearOfflineQueue, addToOfflineQueue, setLastSync,
+  getOfflineQueue, addToOfflineQueue, setLastSync,
 } from './storage';
 import { api } from './api';
 
