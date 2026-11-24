@@ -45,25 +45,6 @@ export default function TabsLayout() {
       {/* Tab 2 — Temukan (Katalog latihan) */}
       <Tabs.Screen
         name="exercises"
-<<<<<<< HEAD
-        options={{ title: 'Latihan', tabBarIcon: ({ color }) => <Ionicons name="barbell-outline" size={22} color={color} /> }}
-      />
-      <Tabs.Screen
-        name="discover"
-        options={{
-          title: 'Temukan',
-          headerShown: false,
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? { backgroundColor: '#D1FAE5', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 4 } : {}}>
-              <Ionicons name="compass-outline" size={22} color={color} />
-            </View>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="schedule"
-        options={{ title: 'Jadwal', tabBarIcon: ({ color }) => <Ionicons name="calendar-outline" size={22} color={color} /> }}
-=======
         options={{
           title: 'Temukan',
           headerShown: false,
@@ -71,7 +52,6 @@ export default function TabsLayout() {
             <Ionicons name="search-outline" size={size} color={color} />
           ),
         }}
->>>>>>> 8b8c4b2 (fiksss ini)
       />
 
       {/* Tab 3 — Komunitas */}
@@ -114,7 +94,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="schedule"
         options={{
-          href: null, // sembunyikan dari tab bar
+          href: null,
           headerTitle: 'Jadwal',
         }}
       />

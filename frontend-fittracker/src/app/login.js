@@ -46,7 +46,16 @@ export default function LoginScreen() {
         router.replace('/onboarding');
       }
     } catch (error) {
-      Alert.alert('Login Gagal', error.message);
+      // Pesan offline yang ramah
+      if (error.isNetwork) {
+        Alert.alert(
+          'Tidak Ada Koneksi',
+          'Login memerlukan koneksi internet. Pastikan kamu terhubung ke Wi-Fi atau data seluler, lalu coba lagi.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Login Gagal', error.message);
+      }
     } finally {
       setLoading(false);
     }

@@ -30,6 +30,7 @@ DROP TABLE IF EXISTS `group_members`;
 DROP TABLE IF EXISTS group_messages;
 DROP TABLE IF EXISTS `groups`;
 DROP TABLE IF EXISTS weight_logs;
+DROP TABLE IF EXISTS user_settings;
 DROP TABLE IF EXISTS user_profiles;
 DROP TABLE IF EXISTS exercises;
 DROP TABLE IF EXISTS users;
@@ -178,6 +179,22 @@ CREATE TABLE IF NOT EXISTS weight_logs (
   created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_user_date (id_user, tanggal),
   CONSTRAINT fk_wl_user FOREIGN KEY (id_user)
+    REFERENCES users(id_user) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ===========================================================================
+-- US-07: Preferensi notifikasi & pengingat latihan (per user)
+-- Disimpan di server agar sinkron lintas perangkat.
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS user_settings (
+  id_setting          INT AUTO_INCREMENT PRIMARY KEY,
+  id_user             INT NOT NULL UNIQUE,
+  reminder_enabled    TINYINT(1) NOT NULL DEFAULT 0,       -- toggle pengingat latihan
+  reminder_time       VARCHAR(5)  NOT NULL DEFAULT '17:00', -- format HH:MM
+  community_enabled   TINYINT(1) NOT NULL DEFAULT 1,       -- toggle notif komunitas
+  next_schedule_label VARCHAR(50) DEFAULT NULL,            -- label tampilan "jadwal berikutnya"
+  updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_us_user FOREIGN KEY (id_user)
     REFERENCES users(id_user) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

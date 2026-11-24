@@ -11,6 +11,9 @@
 //     tahap pengembangan berikutnya.
 
 import { KEYS, getJSON, setJSON } from './storage';
+import {
+  getOfflineQueue, clearOfflineQueue, addToOfflineQueue, setLastSync,
+} from './storage';
 import { api } from './api';
 
 // --- Generator ID lokal ---
@@ -176,22 +179,31 @@ export async function createLog(data) {
   };
   logs.unshift(log);
   await setJSON(KEYS.LOGS, logs);
-  // Best-effort push ke backend.
+
+  // Coba kirim ke backend; jika gagal → masukkan ke offline queue
+  const payload = {
+    id_plan:    data.id_plan     || null,
+    id_exercise: log.id_exercise  ? Number(log.id_exercise) : null,
+    jumlah_set:  log.jumlah_set,
+    reps:        log.reps,
+    beban:       log.beban,
+    durasi:      log.durasi,
+    catatan:     log.catatan,
+    tanggal:     log.tanggal,
+  };
   try {
-    await api.createLog({
-      id_plan: data.id_plan || null,
-      id_exercise: log.id_exercise ? Number(log.id_exercise) : null,
-      jumlah_set: log.jumlah_set,
-      reps: log.reps,
-      beban: log.beban,
-      durasi: log.durasi,
-      catatan: log.catatan,
-      tanggal: log.tanggal,
-    }).then((res) => {
-      if (res && res.id_log) log.id_log = res.id_log; // simpan ID backend untuk delete sync
-    });
-  } catch (e) {
-    console.warn('[localStore] Sinkronisasi log ke backend gagal:', e.message);
+    const res = await api.createLog(payload);
+    if (res && res.id_log) {
+      log.id_log = res.id_log;
+      // Perbarui id_log di storage agar hapus sync bisa pakai backend id
+      const updated = await getLogs();
+      const idx = updated.findIndex((l) => l.id === log.id);
+      if (idx !== -1) { updated[idx].id_log = res.id_log; await setJSON(KEYS.LOGS, updated); }
+    }
+  } catch {
+    // Offline — simpan ke antrian agar di-sync saat online
+    await addToOfflineQueue({ ...payload, _localId: log.id });
+    console.warn('[localStore] Log disimpan lokal, masuk antrian offline.');
   }
   return log;
 }
@@ -291,6 +303,48 @@ export async function refreshPlansFromBackend() {
     console.warn('[refresh] Gagal refresh plans dari backend:', e.message);
   }
   return null;
+}
+
+// ===========================================================================
+// SINKRONISASI OFFLINE QUEUE — kirim log yang tersimpan saat offline
+// Dipanggil dari AuthContext setiap kali koneksi tersedia.
+// ===========================================================================
+export async function syncOfflineQueue() {
+  const queue = await getOfflineQueue();
+  if (queue.length === 0) return 0;
+
+  let synced = 0;
+  const failed = [];
+
+  for (const item of queue) {
+    const { _localId, _queuedAt, ...payload } = item;
+    try {
+      const res = await api.createLog(payload);
+      if (res && res.id_log) {
+        // Update id_log di LOGS lokal agar konsisten
+        const logs = await getLogs();
+        const idx = logs.findIndex((l) => l.id === _localId);
+        if (idx !== -1) {
+          logs[idx].id_log = res.id_log;
+          await setJSON(KEYS.LOGS, logs);
+        }
+        synced++;
+        console.log('[offlineQueue] Log tersinkron:', payload.tanggal, '→ id_log', res.id_log);
+      }
+    } catch {
+      failed.push(item); // simpan ulang yang masih gagal
+    }
+  }
+
+  // Simpan ulang hanya yang masih gagal
+  await setJSON(KEYS.OFFLINE_QUEUE, failed);
+
+  if (synced > 0) {
+    await setLastSync();
+    console.log(`[offlineQueue] ${synced} log tersinkron, ${failed.length} masih pending.`);
+  }
+
+  return synced;
 }
 
 // ===========================================================================

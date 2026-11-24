@@ -4,6 +4,8 @@ import { useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../api';
 import { cacheGroups, getCachedGroups } from '../../localStore';
+import { getCommunityEnabled } from '../../storage';
+import { sendCommunityNotification } from '../../notifications';
 import { Card, Button, Field, Badge, EmptyState, Loading } from '../../components/ui';
 import { colors, typography } from '../../theme';
 
@@ -45,13 +47,32 @@ export default function GroupsScreen() {
   const [nama, setNama] = useState('');
   const [deskripsi, setDeskripsi] = useState('');
   const [saving, setSaving] = useState(false);
+  // Badge jumlah aktivitas baru (reset saat tab dibuka)
+  const [newActivityCount, setNewActivityCount] = useState(0);
+  // Status toggle komunitas dari AsyncStorage
+  const [communityOn, setCommunityOn] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
+    // Baca status toggle komunitas
+    const enabled = await getCommunityEnabled();
+    setCommunityOn(enabled);
     try {
       const res = await api.getGroups();
-      setGroups(res.groups || []);
-      await cacheGroups(res.groups || []);
+      const fresh = res.groups || [];
+      // Hitung aktivitas baru: grup baru yang belum ada di cache
+      const cached = await getCachedGroups();
+      const cachedIds = new Set(cached.map((g) => g.id_group));
+      const newCount = fresh.filter((g) => !cachedIds.has(g.id_group)).length;
+      if (newCount > 0) {
+        setNewActivityCount(newCount);
+        // Kirim notifikasi komunitas hanya jika toggle aktif
+        if (enabled) {
+          await sendCommunityNotification('new_activity', `${newCount} grup baru`);
+        }
+      }
+      setGroups(fresh);
+      await cacheGroups(fresh);
       setOffline(false);
     } catch (e) {
       setOffline(true);
@@ -64,6 +85,8 @@ export default function GroupsScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
+      // Reset badge saat user membuka tab ini
+      setNewActivityCount(0);
     }, [load])
   );
 
@@ -74,11 +97,16 @@ export default function GroupsScreen() {
     }
     setSaving(true);
     try {
-      await api.createGroup({ nama_group: nama.trim(), deskripsi: deskripsi.trim() });
+      const groupName = nama.trim();
+      await api.createGroup({ nama_group: groupName, deskripsi: deskripsi.trim() });
       setNama('');
       setDeskripsi('');
       setShowCreate(false);
       await load();
+      // Notifikasi komunitas jika toggle aktif
+      if (communityOn) {
+        await sendCommunityNotification('create', groupName);
+      }
     } catch (e) {
       Alert.alert('Gagal', e.message);
     } finally {
@@ -94,10 +122,26 @@ export default function GroupsScreen() {
           <Text style={styles.mainTitle}>Komunitas</Text>
           <Text style={styles.subtitle}>Lebih semangat saat bergerak bersama.</Text>
         </View>
+        {/* Lonceng dengan badge aktivitas baru */}
         <Pressable style={styles.bellButton}>
-          <Ionicons name="notifications-outline" size={20} color={colors.primary} />
+          <Ionicons name="notifications-outline" size={20} color={communityOn ? colors.primary : '#9CA3AF'} />
+          {communityOn && newActivityCount > 0 && (
+            <View style={styles.bellBadge}>
+              <Text style={styles.bellBadgeTxt}>{newActivityCount}</Text>
+            </View>
+          )}
         </Pressable>
       </View>
+
+      {/* Banner jika notifikasi komunitas dinonaktifkan */}
+      {!communityOn && (
+        <View style={styles.notifOffBanner}>
+          <Ionicons name="notifications-off-outline" size={15} color="#B45309" style={{ marginRight: 6 }} />
+          <Text style={styles.notifOffTxt}>
+            Notifikasi komunitas dinonaktifkan. Aktifkan di Pengaturan.
+          </Text>
+        </View>
+      )}
 
       {/* Status Koneksi */}
       <View style={styles.statusRow}>
@@ -154,17 +198,17 @@ export default function GroupsScreen() {
       ) : (
         groups.map((g) => (
           <Pressable key={g.id_group} onPress={() => router.push(`/group/${g.id_group}`)}>
-            <Card style={styles.groupCard}>
+            <View style={styles.groupCard}>
               <View style={styles.groupAvatar}>
-                <Text style={styles.groupAvatarText}>{g.nama_group?.substring(0, 2).toUpperCase()}</Text>
+                <Text style={styles.groupAvatarText}>{(g.nama_group || 'G').substring(0, 2).toUpperCase()}</Text>
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.groupName}>{g.nama_group}</Text>
-                <Text style={styles.groupMeta}>{g.jumlah_anggota} anggota</Text>
-                {g.sudah_gabung && <Text style={[styles.groupSubMeta, { color: colors.primary }]}>Bergabung</Text>}
+                <Text style={styles.groupName}>{String(g.nama_group || '')}</Text>
+                <Text style={styles.groupMeta}>{String(g.jumlah_anggota ?? 0)} anggota</Text>
+                {!!g.sudah_gabung && <Text style={[styles.groupSubMeta, { color: colors.primary }]}>Bergabung</Text>}
               </View>
               <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-            </Card>
+            </View>
           </Pressable>
         ))
       )}
@@ -262,6 +306,39 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  bellBadgeTxt: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  notifOffBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  notifOffTxt: {
+    flex: 1,
+    fontSize: 12,
+    color: '#92400E',
   },
   statusRow: {
     flexDirection: 'row',
