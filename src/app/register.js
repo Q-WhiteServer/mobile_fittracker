@@ -37,8 +37,8 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       const user = await register(namaLengkap, email, password);
-      Alert.alert('Berhasil', `Selamat datang, ${user.nama_lengkap}!`);
-      router.replace('/home');
+      // Register selalu menuju onboarding karena user baru belum mengisi data fisik
+      router.replace('/onboarding');
     } catch (error) {
       Alert.alert('Registrasi Gagal', error.message);
     } finally {
