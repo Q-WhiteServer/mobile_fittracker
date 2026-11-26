@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme';
+import { router } from 'expo-router';
 
 // ── Aset gambar ───────────────────────────────────────────────────────────────
 let IMG_OLAHRAGA = null;
@@ -75,10 +76,24 @@ const PEREGANGAN = [
   },
 ];
 
-// ── Kartu program — statis (View, bukan Pressable) ────────────────────────────
+// ── Kartu program — BISA DIKLIK → program/[id] ───────────────────────────────
 function ProgramCard({ item }) {
   return (
-    <View style={s.programCard}>
+    <Pressable
+      style={s.programCard}
+      onPress={() =>
+        router.push({
+          pathname: `/program/${item.id}`,
+          params: {
+            id:       item.id,
+            judul:    item.judul,
+            kategori: item.kategori,
+            fokus:    item.fokus,
+            offline:  item.offline ? 'true' : 'false',
+          },
+        })
+      }
+    >
       {/* Gambar */}
       <View style={s.programImgWrap}>
         {item.img ? (
@@ -106,14 +121,17 @@ function ProgramCard({ item }) {
           </View>
         )}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
-// ── Kartu peregangan — statis (View, bukan Pressable) ─────────────────────────
+// ── Kartu peregangan — BISA DIKLIK ───────────────────────────────────────────
 function PeregangCard({ item }) {
   return (
-    <View style={s.peregCard}>
+    <Pressable
+      style={s.peregCard}
+      onPress={() => router.push({ pathname: `/peregangan/${item.id}`, params: { id: item.id } })}
+    >
       <View style={[s.peregIconBox, { backgroundColor: item.iconBg }]}>
         <Ionicons name={item.icon} size={22} color={item.iconColor} />
       </View>
@@ -129,7 +147,7 @@ function PeregangCard({ item }) {
         )}
       </View>
       <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-    </View>
+    </Pressable>
   );
 }
 

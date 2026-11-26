@@ -256,7 +256,11 @@ export default function HomeScreen() {
       </View>
 
       {MOCK_PROGRAMS.map((prog) => (
-        <View key={prog.id} style={s.programCard}>
+        <Pressable
+          key={prog.id}
+          style={s.programCard}
+          onPress={() => router.push({ pathname: `/program/${prog.id}`, params: { id: prog.id } })}
+        >
           <View style={s.programIconBox}>
             <Ionicons name={prog.icon} size={22} color={colors.primary} />
           </View>
@@ -269,7 +273,7 @@ export default function HomeScreen() {
             </View>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-        </View>
+        </Pressable>
       ))}
 
     </ScrollView>
