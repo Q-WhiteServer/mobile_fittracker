@@ -336,11 +336,12 @@ const s = StyleSheet.create({
 
   /* Filter chip */
   filterLabel: { fontSize: 13, color: '#4B5563', fontWeight: '500', marginBottom: 8, marginTop: 2 },
-  chipRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  chipRow:     { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
   chip: {
     paddingHorizontal: 14, paddingVertical: 8,
     borderRadius: 999, borderWidth: 1.5, borderColor: '#E5E7EB',
     backgroundColor: '#FFFFFF',
+    marginRight: 8, marginBottom: 8,
   },
   chipActive:    { borderColor: PRIMARY, backgroundColor: PRIMARY_LL },
   chipTxt:       { fontSize: 13, fontWeight: '600', color: '#6B7280' },

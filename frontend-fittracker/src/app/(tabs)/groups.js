@@ -223,11 +223,11 @@ export default function GroupsScreen() {
             <Field value={nama} onChangeText={setNama} placeholder="cth. Lari Pagi Bersama" />
             <Text style={typography.label}>Deskripsi</Text>
             <Field value={deskripsi} onChangeText={setDeskripsi} placeholder="Deskripsi singkat" multiline />
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-              <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', marginTop: 10 }}>
+              <View style={{ flex: 1, marginRight: 5 }}>
                 <Button title="Batal" variant="outline" onPress={() => setShowCreate(false)} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, marginLeft: 5 }}>
                 <Button title="Buat" loading={saving} onPress={handleCreate} />
               </View>
             </View>
@@ -276,7 +276,6 @@ const styles = StyleSheet.create({
   },
   actionButtonRow: {
     flexDirection: 'row',
-    gap: 12,
     marginBottom: 24,
   },
   primaryActionBtn: {
@@ -380,12 +379,12 @@ const styles = StyleSheet.create({
   },
   challengeMetaRow: {
     flexDirection: 'row',
-    gap: 6,
     marginBottom: 10,
   },
   challengeSub: {
     fontSize: 12,
     color: '#047857',
+    marginRight: 6,
   },
   progressBarBg: {
     height: 6,
