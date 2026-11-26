@@ -125,6 +125,8 @@ const TUJUAN = [
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ProfileScreen() {
   const { user, logout, lastSync, isOnline, triggerSync } = useAuth();
+  const onlineSafe    = isOnline    !== undefined ? isOnline    : true;
+  const triggerSyncFn = triggerSync !== undefined ? triggerSync : () => {};
 
   // ── State profil fisik ────────────────────────────────────────────────────
   const [profile, setProfile] = useState({
@@ -355,35 +357,33 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Cloud Sync Banner — dinamis */}
+        {/* Cloud Sync Banner */}
         <Pressable
-          style={[s.syncBanner, !isOnline && { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}
-          onPress={triggerSync}
-          accessibilityLabel="Ketuk untuk sinkronisasi ulang"
+          style={[s.syncBanner, !onlineSafe && { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}
+          onPress={triggerSyncFn}
         >
           <View style={s.syncIconWrap}>
             <Ionicons
-              name={isOnline ? 'cloud-done-outline' : 'cloud-offline-outline'}
+              name={onlineSafe ? 'cloud-done-outline' : 'cloud-offline-outline'}
               size={18}
-              color={isOnline ? MINT : '#D97706'}
+              color={onlineSafe ? MINT : '#D97706'}
             />
           </View>
           <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={[s.syncTitle, !isOnline && { color: '#B45309' }]}>
-              {isOnline ? 'Cloud tersinkronisasi' : 'Offline — data tersimpan lokal'}
+            <Text style={[s.syncTitle, !onlineSafe && { color: '#B45309' }]}>
+              {onlineSafe ? 'Cloud tersinkronisasi' : 'Offline — data tersimpan lokal'}
             </Text>
-            <Text style={[s.syncSub, !isOnline && { color: '#D97706' }]}>
-              {isOnline
+            <Text style={[s.syncSub, !onlineSafe && { color: '#D97706' }]}>
+              {onlineSafe
                 ? `Terakhir: ${fmtSyncLabel(lastSync)}`
                 : 'Ketuk untuk sinkronisasi saat koneksi kembali'}
             </Text>
           </View>
-          <Ionicons
-            name="refresh-outline"
-            size={16}
-            color={isOnline ? MINT : '#D97706'}
-          />
+          <Ionicons name="refresh-outline" size={16} color={onlineSafe ? MINT : '#D97706'} />
         </Pressable>
+        <Text style={s.syncNote}>
+          Jadwal dan log tetap bisa diakses offline. Perubahan akan disinkronkan saat online.
+        </Text>
 
         {/* Section: Pengingat & Notifikasi */}
         <Text style={s.sectionTitle}>Pengingat &amp; notifikasi</Text>
@@ -479,6 +479,8 @@ export default function ProfileScreen() {
         {/* Section: Sistem */}
         <Text style={s.sectionTitle}>Sistem</Text>
         <View style={s.card}>
+          <SystemRow icon="download-outline"           label="Unduhan offline"   right={<Text style={s.sysRight}>12 program • 148 MB</Text>} chevron />
+          <View style={s.divider} />
           <SystemRow icon="language-outline"           label="Bahasa"            right={<Text style={s.sysRight}>Indonesia</Text>} />
           <View style={s.divider} />
           <SystemRow icon="help-circle-outline"        label="Bantuan &amp; privasi"  chevron />
@@ -629,8 +631,8 @@ export default function ProfileScreen() {
               ))}
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row' }}>
+              <View style={{ flex: 1, marginRight: 6 }}>
                 <Text style={s.formLabel}>Usia (th)</Text>
                 <TextInput
                   style={s.formInput}
@@ -641,7 +643,7 @@ export default function ProfileScreen() {
                   placeholderTextColor={MUTED}
                 />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, marginLeft: 6 }}>
                 <Text style={s.formLabel}>Tinggi (cm)</Text>
                 <TextInput
                   style={s.formInput}
@@ -772,13 +774,19 @@ const s = StyleSheet.create({
   physVal:     { fontSize: 20, fontWeight: 'bold', color: TEXT },
   physUnit:    { fontSize: 12, fontWeight: '400', color: MUTED },
   physLabel:   { fontSize: 11, color: MUTED, marginTop: 2 },
-  tujuanRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingBottom: 14, gap: 6 },
-  tujuanTxt:   { fontSize: 12, color: GRAY },
+  tujuanRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingBottom: 14 },
+  tujuanTxt:   { fontSize: 12, color: GRAY, marginLeft: 6 },
   editPhysBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginHorizontal: 16, marginBottom: 14, paddingVertical: 11, borderRadius: 12, borderWidth: 1.5, borderColor: MINT, backgroundColor: WHITE },
   editPhysTxt: { fontSize: 14, fontWeight: '600', color: MINT },
 
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginHorizontal: 16, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: '#FCA5A5', backgroundColor: WHITE },
   logoutTxt: { fontSize: 14, fontWeight: '600', color: RED },
+
+  syncBanner:   { flexDirection: 'row', alignItems: 'center', backgroundColor: MINT_LL, borderRadius: 14, marginHorizontal: 16, padding: 12, marginBottom: 4, borderWidth: 1, borderColor: MINT_L },
+  syncIconWrap: { width: 30, height: 30, borderRadius: 8, backgroundColor: WHITE, alignItems: 'center', justifyContent: 'center' },
+  syncTitle:    { fontSize: 13, fontWeight: '700', color: MINT_D },
+  syncSub:      { fontSize: 11, color: MINT, marginTop: 1 },
+  syncNote:     { fontSize: 12, color: GRAY, marginHorizontal: 20, marginBottom: 16, lineHeight: 18 },
 
   /* Modal jadwal */
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
@@ -821,8 +829,8 @@ const s = StyleSheet.create({
   /* Modal edit profil */
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: BORDER },
   modalSave:   { fontSize: 15, fontWeight: '700', color: MINT },
-  chipRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip:        { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, backgroundColor: WHITE },
+  chipRow:     { flexDirection: 'row', flexWrap: 'wrap' },
+  chip:        { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, backgroundColor: WHITE, marginRight: 8, marginBottom: 8 },
   chipActive:  { backgroundColor: MINT_L, borderColor: MINT },
   chipTxt:     { fontSize: 13, fontWeight: '600', color: GRAY },
   chipTxtActive:{ color: MINT },

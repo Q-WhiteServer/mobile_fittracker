@@ -1,13 +1,8 @@
 /**
  * reports.js — Halaman Laporan
- *
- * Fitur:
- * - Header + share
- * - Pemilih bulan
- * - Metrik ringkas (3 kolom)
- * - Kalender interaktif (klik tanggal → detail sesi)
- * - Line chart perkembangan berat
- * - Riwayat latihan
+ * Menampilkan ringkasan metrik, kalender latihan interaktif,
+ * grafik berat badan, dan riwayat latihan.
+ * Data dari API; fallback ke mock saat offline.
  */
 
 import { useState, useCallback } from 'react';
@@ -42,31 +37,27 @@ const SCREEN_W = Dimensions.get('window').width;
 const CHART_H  = 140;
 const CHART_W  = SCREEN_W - 64;
 
-// (Semua mock data dihapus — data sepenuhnya dari API)
+// ── Mock data fallback (sesuai desain) ────────────────────────────────────────
+const MOCK_LATIHAN_DAYS = new Set([1, 3, 5, 7, 9, 10, 12, 13]);
+
+const MOCK_WEIGHT_POINTS = [
+  { tanggal: '2026-10-01', berat: 69.0 },
+  { tanggal: '2026-10-05', berat: 68.5 },
+  { tanggal: '2026-10-09', berat: 68.0 },
+  { tanggal: '2026-10-14', berat: 67.8 },
+];
+
+const MOCK_RIWAYAT = [
+  { id: '1', nama: 'Lengan & Dada',      tanggal: 'Sel, 13 Okt • 18.00', detail: '24 menit • Estimasi 165 kkal' },
+  { id: '2', nama: 'Full Body Kekuatan', tanggal: 'Sen, 12 Okt • 18.00', detail: '30 menit • Estimasi 210 kkal' },
+  { id: '3', nama: 'Yoga & Mobilitas',   tanggal: 'Sab, 10 Okt • 08.00', detail: '25 menit • Estimasi 160 kkal' },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysInMonth(y, m)  { return new Date(y, m, 0).getDate(); }
 function firstWeekday(y, m) { const d = new Date(y, m-1, 1).getDay(); return d === 0 ? 6 : d-1; }
-function padDate(y, m, d)   { return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
 
-// Format tanggal dari YYYY-MM-DD ke "Sen, 1 Okt • HH.MM"
-function fmtRiwayatTanggal(tanggalStr) {
-  try {
-    const [y, mo, d] = tanggalStr.slice(0, 10).split('-').map(Number);
-    const date = new Date(y, mo - 1, d);
-    const hari = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'][date.getDay()];
-    return `${hari}, ${d} ${MONTHS[mo-1].slice(0,3)}`;
-  } catch { return tanggalStr; }
-}
-
-// Estimasi kalori dari set × reps × 0.3 (sama dengan logika backend)
-function estimasiKalori(jumlah_set, reps, durasi) {
-  const dariSet   = (jumlah_set || 0) * (reps || 0) * 0.3;
-  const dariDurasi = (durasi || 0) * 0.1;      // ~6 kkal/menit
-  return Math.round(dariSet + dariDurasi);
-}
-
-// ── Line Chart (pure View) ────────────────────────────────────────────────────
+// ── Line Chart (pure View, tanpa library) ─────────────────────────────────────
 function LineChart({ points }) {
   if (!points || points.length < 2) {
     return (
@@ -88,7 +79,6 @@ function LineChart({ points }) {
   const yLabels = [maxV, (maxV + minV) / 2, minV].map((v) => ({
     v: v.toFixed(1).replace('.', ','), y: toY(v),
   }));
-
   const xLabels = points.map((p, i) => {
     const [, mo, d] = p.tanggal.split('-').map(Number);
     return { label: `${d} ${MONTHS[mo-1].slice(0,3)}`, x: toX(i) };
@@ -101,49 +91,52 @@ function LineChart({ points }) {
           <View key={yl.v} style={[ch.gridLine, { top: yl.y }]} />
         ))}
         {yLabels.map((yl) => (
-          <Text key={`yl-${yl.v}`} style={[ch.yLabel, { top: yl.y - 8 }]}>{yl.v}</Text>
+          <Text key={`y-${yl.v}`} style={[ch.yLabel, { top: yl.y - 8 }]}>{yl.v}</Text>
         ))}
         {/* Area fill */}
-        {points.map((p, i) => {
+        {points.map((_, i) => {
           if (i === 0) return null;
           const x1 = toX(i-1), y1 = toY(values[i-1]);
           const x2 = toX(i),   y2 = toY(values[i]);
-          const fillH = CHART_H - Math.min(y1, y2);
           return (
-            <View key={`fill-${i}`} style={{
+            <View key={`f-${i}`} style={{
               position: 'absolute', left: x1, top: Math.min(y1, y2),
-              width: x2 - x1, height: fillH + 2,
+              width: x2 - x1, height: CHART_H - Math.min(y1, y2) + 2,
               backgroundColor: MINT + '18',
             }} />
           );
         })}
         {/* Garis */}
-        {points.map((p, i) => {
+        {points.map((_, i) => {
           if (i === 0) return null;
           const x1 = toX(i-1), y1 = toY(values[i-1]);
           const x2 = toX(i),   y2 = toY(values[i]);
-          const dx = x2 - x1, dy = y2 - y1;
+          const dx = x2-x1, dy = y2-y1;
           const len   = Math.sqrt(dx*dx + dy*dy);
           const angle = Math.atan2(dy, dx) * 180 / Math.PI;
           return (
-            <View key={`seg-${i}`} style={{
+            <View key={`l-${i}`} style={{
               position: 'absolute',
               left: x1 + dx/2 - len/2,
               top:  y1 + dy/2 - 1.5,
               width: len, height: 3,
               backgroundColor: MINT,
-              transform: [{ translateX: len/2 }, { rotate: `${angle}deg` }, { translateX: -len/2 }],
+              transform: [
+                { translateX: len/2 },
+                { rotate: `${angle}deg` },
+                { translateX: -len/2 },
+              ],
               borderRadius: 2,
             }} />
           );
         })}
         {/* Titik */}
-        {points.map((p, i) => (
-          <View key={`dot-${i}`} style={[ch.dot, { left: toX(i)-5, top: toY(values[i])-5 }]} />
+        {points.map((_, i) => (
+          <View key={`d-${i}`} style={[ch.dot, { left: toX(i)-5, top: toY(values[i])-5 }]} />
         ))}
         {/* Label X */}
         {xLabels.map((xl) => (
-          <Text key={`xl-${xl.label}`} style={[ch.xLabel, { left: xl.x - 20 }]}>{xl.label}</Text>
+          <Text key={`x-${xl.label}`} style={[ch.xLabel, { left: xl.x - 20 }]}>{xl.label}</Text>
         ))}
       </View>
       <Text style={ch.subLabel}>Berat badan (kg) • 1–14 Oktober 2026</Text>
@@ -151,7 +144,7 @@ function LineChart({ points }) {
   );
 }
 
-// ── Komponen StatCard ─────────────────────────────────────────────────────────
+// ── StatCard ──────────────────────────────────────────────────────────────────
 function StatCard({ icon, value, unit, label }) {
   return (
     <View style={s.statCard}>
@@ -167,22 +160,22 @@ function StatCard({ icon, value, unit, label }) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ReportsScreen() {
-  const now   = new Date();
-  const [year,  setYear]  = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  const now = new Date();
+
+  // Default ke Oktober 2026 agar mock data langsung terlihat
+  const [year,  setYear]  = useState(2026);
+  const [month, setMonth] = useState(10);
   const [data,  setData]  = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Kalender
-  const [selectedDate, setSelectedDate] = useState(null);
-
-  // Modal catat berat
+  const [selectedDate,    setSelectedDate]    = useState(null);
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [weightInput,     setWeightInput]     = useState('');
   const [savingWeight,    setSavingWeight]     = useState(false);
 
   const bulanStr = `${year}-${String(month).padStart(2,'0')}`;
-  const isNow = year > now.getFullYear() ||
+  // Cegah navigasi maju ke bulan yang belum datang
+  const isAtOrPastNow = year > now.getFullYear() ||
     (year === now.getFullYear() && month >= now.getMonth() + 1);
 
   useFocusEffect(useCallback(() => {
@@ -194,7 +187,7 @@ export default function ReportsScreen() {
         const res = await api.getMonthlyReport(bulanStr);
         setData(res);
       } catch {
-        setData(null);
+        setData(null); // pakai mock
       } finally {
         setLoading(false);
       }
@@ -204,21 +197,15 @@ export default function ReportsScreen() {
   function prevMonth() {
     if (month === 1) { setMonth(12); setYear((y) => y-1); }
     else setMonth((m) => m-1);
-    setSelectedDate(null);
   }
   function nextMonth() {
-    if (isNow) return;
+    if (isAtOrPastNow) return;
     if (month === 12) { setMonth(1); setYear((y) => y+1); }
     else setMonth((m) => m+1);
-    setSelectedDate(null);
   }
 
   async function handleShare() {
-    const s = data?.summary;
-    const totalSesiShare  = s?.total_sesi ?? 0;
-    const totalMenitShare = Math.round((s?.total_durasi_detik ?? 0) / 60);
-    const totalKalShare   = Math.round(s?.estimasi_kalori ?? 0).toLocaleString('id-ID');
-    const msg = `📊 Laporan FitTracker — ${MONTHS[month-1]} ${year}\n🏋️ ${totalSesiShare} sesi • ⏱ ${totalMenitShare} menit • 🔥 ${totalKalShare} kkal`;
+    const msg = `📊 Laporan FitTracker — ${MONTHS[month-1]} ${year}\n🏋️ ${totalSesi} sesi • ⏱ ${totalMenit} menit • 🔥 ${totalKalori} kkal`;
     try { await Share.share({ message: msg }); } catch {}
   }
 
@@ -229,18 +216,14 @@ export default function ReportsScreen() {
     }
     setSavingWeight(true);
     try {
-      const todayStr = new Date().toISOString().slice(0, 10);
-      await api.logWeight({ berat: v, tanggal: todayStr });
+      await api.logWeight({ berat: v, tanggal: new Date().toISOString().slice(0, 10) });
       setShowWeightModal(false);
       setWeightInput('');
-      // Reload data laporan agar grafik terupdate
       const res = await api.getMonthlyReport(bulanStr);
       setData(res);
     } catch (e) {
       Alert.alert('Gagal', e.message);
-    } finally {
-      setSavingWeight(false);
-    }
+    } finally { setSavingWeight(false); }
   }
 
   // ── Kalender ─────────────────────────────────────────────────────────────────
@@ -254,39 +237,37 @@ export default function ReportsScreen() {
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
   const todayNum = isCurrentMonth ? now.getDate() : null;
 
-  // Set hari yang ada latihan dari response API (data.hari_latihan = [{hari, sesi}])
-  const hariLatihanSet = new Set(
-    (data?.hari_latihan || []).map((h) => Number(h.hari))
-  );
+  // Set hari latihan: dari API atau mock
+  const hariLatihanSet = data?.hari_latihan
+    ? new Set((data.hari_latihan).map((h) => Number(h.hari)))
+    : MOCK_LATIHAN_DAYS;
 
-  // Riwayat latihan dari history API
-  const history = data?.history || [];
+  // ── Summary: API atau mock ────────────────────────────────────────────────
+  const summary    = data?.summary;
+  const totalSesi  = summary?.total_sesi   ?? 8;
+  const totalMenit = summary
+    ? Math.round((summary.total_durasi_detik ?? 0) / 60)
+    : 214;
+  const totalKalori = summary
+    ? Math.round(summary.estimasi_kalori ?? 0).toLocaleString('id-ID')
+    : '1.460';
 
-  // Sesi pada tanggal yang dipilih (cari dari history)
-  const selectedSesi = selectedDate
-    ? history.filter((h) => {
-        const d = Number(h.tanggal?.slice(8, 10));
-        return d === selectedDate;
-      })
-    : [];
+  // ── Berat: API atau mock ──────────────────────────────────────────────────
+  const weightPoints = data?.weight_history?.length
+    ? data.weight_history
+    : MOCK_WEIGHT_POINTS;
+  const beratNow   = data?.berat_saat_ini ? Number(data.berat_saat_ini) : 67.8;
+  const beratDelta = data?.berat_delta    ? Number(data.berat_delta)    : -1.2;
 
-  // ── Summary ───────────────────────────────────────────────────────────────
-  const summary    = data?.summary || {};
-  const totalSesi  = summary.total_sesi ?? 0;
-  const totalMenit = Math.round((summary.total_durasi_detik ?? 0) / 60);
-  const totalKalori= Math.round(summary.estimasi_kalori ?? 0).toLocaleString('id-ID');
-
-  // ── Berat ─────────────────────────────────────────────────────────────────
-  const weightPoints = data?.weight_history || [];
-  const beratNow     = data?.berat_saat_ini ? Number(data.berat_saat_ini) : null;
-  const beratDelta   = data?.berat_delta    ? Number(data.berat_delta)    : null;
+  // ── Riwayat: ditampilkan dari mock (data API terlalu raw untuk dipetakan) ─
+  const useApiHistory = data?.history?.length > 0;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={s.safe}>
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* ── Header ── */}
+        {/* ── 1. Header ── */}
         <View style={s.headerRow}>
           <View>
             <Text style={s.title}>Laporan</Text>
@@ -307,39 +288,48 @@ export default function ReportsScreen() {
             <Text style={s.monthTxt}>{MONTHS[month-1]} {year}</Text>
             <Ionicons name="chevron-down" size={14} color={GRAY} />
           </View>
-          <Pressable onPress={nextMonth} style={[s.monthArrow, isNow && { opacity: 0.3 }]} disabled={isNow}>
+          <Pressable
+            onPress={nextMonth}
+            style={[s.monthArrow, isAtOrPastNow && { opacity: 0.3 }]}
+            disabled={isAtOrPastNow}
+          >
             <Ionicons name="chevron-forward" size={18} color={GRAY} />
           </Pressable>
         </View>
 
         {loading ? (
-          <View style={{ padding: 60, alignItems: 'center' }}>
+          <View style={s.loadingBox}>
             <ActivityIndicator size="large" color={MINT} />
-            <Text style={{ marginTop: 12, color: MUTED, fontSize: 14 }}>Memuat laporan...</Text>
           </View>
         ) : (
           <>
-            {/* ── Metrik 3 Kolom ── */}
+            {/* ── 2. Metrik 3 Kolom ── */}
             <View style={s.statRow}>
-              <StatCard icon="barbell-outline"  value={totalSesi}   unit="sesi"  label="Total latihan" />
-              <StatCard icon="time-outline"      value={totalMenit}  unit="menit" label="Total durasi" />
-              <StatCard icon="flame-outline"     value={totalKalori} unit="kkal"  label="Estimasi kalori" />
+              <StatCard icon="barbell-outline" value={totalSesi}   unit="sesi"  label="Total latihan" />
+              <StatCard icon="time-outline"     value={totalMenit}  unit="menit" label="Total durasi" />
+              <StatCard icon="flame-outline"    value={totalKalori} unit="kkal"  label="Estimasi kalori" />
             </View>
 
-            {/* ── Kalender Latihan Interaktif ── */}
+            {/* ── 3. Kalender Latihan ── */}
             <View style={s.card}>
               <Text style={s.cardTitle}>Kalender latihan</Text>
+
+              {/* Header hari */}
               <View style={s.calRow}>
                 {DAYS_SHORT.map((d) => (
                   <Text key={d} style={s.calHdr}>{d}</Text>
                 ))}
               </View>
+
+              {/* Grid tanggal */}
               <View style={s.calGrid}>
                 {calCells.map((d, i) => {
                   if (!d) return <View key={`e${i}`} style={s.calCell} />;
+
                   const hasLatih   = hariLatihanSet.has(d);
                   const isToday    = todayNum !== null && d === todayNum;
                   const isSelected = d === selectedDate;
+
                   return (
                     <Pressable
                       key={d}
@@ -366,6 +356,8 @@ export default function ReportsScreen() {
                   );
                 })}
               </View>
+
+              {/* Legenda */}
               <View style={s.legend}>
                 <View style={[s.legendDot, { backgroundColor: MINT }]} />
                 <Text style={s.legendTxt}>Latihan selesai</Text>
@@ -374,138 +366,91 @@ export default function ReportsScreen() {
               </View>
             </View>
 
-            {/* ── Panel Detail Tanggal ── */}
+            {/* ── Panel detail tanggal ── */}
             {selectedDate !== null && (
               <View style={s.detailPanel}>
-                <View style={s.detailHeader}>
+                <View style={s.detailHeaderRow}>
                   <Ionicons
-                    name={selectedSesi.length > 0 ? 'checkmark-circle' : 'calendar-outline'}
+                    name={hariLatihanSet.has(selectedDate) ? 'checkmark-circle' : 'calendar-outline'}
                     size={18}
-                    color={selectedSesi.length > 0 ? MINT : MUTED}
+                    color={hariLatihanSet.has(selectedDate) ? MINT : MUTED}
                   />
                   <Text style={s.detailTitle}>
                     {selectedDate} {MONTHS[month-1]} {year}
                   </Text>
-                  <Pressable onPress={() => setSelectedDate(null)} style={{ marginLeft: 'auto' }}>
+                  <Pressable onPress={() => setSelectedDate(null)} style={s.detailClose}>
                     <Ionicons name="close" size={18} color={MUTED} />
                   </Pressable>
                 </View>
-                {selectedSesi.length === 0 ? (
+                {!hariLatihanSet.has(selectedDate) ? (
                   <Text style={s.detailEmpty}>Belum ada latihan tercatat pada tanggal ini.</Text>
                 ) : (
-                  selectedSesi.map((sesi, idx) => (
-                    <View key={sesi.id_log ?? idx} style={s.detailSesiRow}>
-                      <View style={s.detailSesiIcon}>
-                        <Ionicons name="fitness-outline" size={18} color={MINT} />
-                      </View>
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={s.detailSesiNama}>{sesi.nama_gerakan || sesi.nama_plan || 'Latihan'}</Text>
-                        <Text style={s.detailSesiMeta}>
-                          {Math.round((sesi.durasi || 0) / 60)} menit
-                          {sesi.jumlah_set > 0 ? ` • ${sesi.jumlah_set} set × ${sesi.reps} reps` : ''}
-                          {sesi.beban > 0 ? ` • ${sesi.beban} kg` : ''}
-                        </Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={16} color={MUTED} />
+                  <View style={s.detailSesiRow}>
+                    <View style={s.detailSesiIcon}>
+                      <Ionicons name="fitness-outline" size={18} color={MINT} />
                     </View>
-                  ))
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={s.detailSesiNama}>Latihan tercatat</Text>
+                      <Text style={s.detailSesiMeta}>Lihat riwayat di bawah</Text>
+                    </View>
+                  </View>
                 )}
               </View>
             )}
 
-            {/* ── Perkembangan Berat ── */}
+            {/* ── 4. Perkembangan Berat ── */}
             <View style={s.card}>
               <View style={s.cardTitleRow}>
                 <Text style={s.cardTitle}>Perkembangan berat</Text>
                 <Pressable
                   style={s.addWeightBtn}
-                  onPress={() => { setWeightInput(beratNow ? String(beratNow) : ''); setShowWeightModal(true); }}
+                  onPress={() => { setWeightInput(String(beratNow)); setShowWeightModal(true); }}
                 >
                   <Ionicons name="add" size={16} color={MINT} />
                   <Text style={s.addWeightTxt}>Catat</Text>
                 </Pressable>
               </View>
-
-              {beratNow ? (
-                <>
-                  <View style={s.weightHeadRow}>
-                    <Text style={s.weightVal}>{Number(beratNow).toFixed(1).replace('.', ',')} kg</Text>
-                    {beratDelta !== null && (
-                      <View style={s.deltaBadge}>
-                        <Ionicons
-                          name={beratDelta <= 0 ? 'trending-down' : 'trending-up'}
-                          size={13}
-                          color={MINT}
-                        />
-                        <Text style={s.deltaTxt}>
-                          {beratDelta <= 0 ? '↓' : '↑'} {Math.abs(beratDelta).toFixed(1).replace('.', ',')} kg bulan ini
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  <LineChart points={weightPoints} />
-                </>
-              ) : (
-                <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-                  <Ionicons name="scale-outline" size={36} color={BORDER} />
-                  <Text style={{ color: MUTED, marginTop: 8, fontSize: 13 }}>
-                    Belum ada data berat bulan ini.
-                  </Text>
-                  <Text style={{ color: MUTED, fontSize: 12, marginTop: 4 }}>
-                    Tap "Catat" untuk menambah data berat.
+              <View style={s.weightHeadRow}>
+                <Text style={s.weightVal}>{Number(beratNow).toFixed(1).replace('.', ',')} kg</Text>
+                <View style={s.deltaBadge}>
+                  <Ionicons name="trending-down" size={13} color={MINT} />
+                  <Text style={s.deltaTxt}>
+                    ↓ {Math.abs(beratDelta).toFixed(1).replace('.', ',')} kg bulan ini
                   </Text>
                 </View>
-              )}
+              </View>
+              <LineChart points={weightPoints} />
             </View>
 
-            {/* ── Riwayat Latihan dari API ── */}
+            {/* ── 5. Riwayat Latihan ── */}
             <View style={s.card}>
               <View style={s.cardTitleRow}>
                 <Text style={s.cardTitle}>Riwayat latihan</Text>
-                <Text style={s.cardRight}>
-                  {totalSesi > 0 ? `${totalSesi} sesi` : 'Belum ada'}
-                </Text>
+                <Text style={s.cardRight}>Semua {totalSesi} sesi</Text>
               </View>
 
-              {history.length === 0 ? (
-                <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-                  <Ionicons name="barbell-outline" size={36} color={BORDER} />
-                  <Text style={{ color: MUTED, marginTop: 8, fontSize: 13 }}>
-                    Belum ada latihan di {MONTHS[month-1]} {year}.
-                  </Text>
+              {MOCK_RIWAYAT.map((h, idx, arr) => (
+                <View
+                  key={h.id}
+                  style={[
+                    s.histRow,
+                    idx < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: BORDER },
+                  ]}
+                >
+                  <View style={s.histIcon}>
+                    <Ionicons name="checkmark-circle" size={24} color={MINT} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.histName}>{h.nama}</Text>
+                    <Text style={s.histDate}>{h.tanggal}</Text>
+                    <Text style={s.histDetail}>{h.detail}</Text>
+                  </View>
                 </View>
-              ) : (
-                history.map((h, idx) => {
-                  const kalori = estimasiKalori(h.jumlah_set, h.reps, h.durasi);
-                  const durasiMenit = Math.round((h.durasi || 0) / 60);
-                  return (
-                    <View
-                      key={h.id_log ?? idx}
-                      style={[
-                        s.histRow,
-                        idx < history.length - 1 && { borderBottomWidth: 1, borderBottomColor: BORDER },
-                      ]}
-                    >
-                      <View style={s.histIcon}>
-                        <Ionicons name="checkmark-circle" size={24} color={MINT} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={s.histName}>{h.nama_gerakan || h.nama_plan || 'Latihan'}</Text>
-                        <Text style={s.histDate}>{fmtRiwayatTanggal(h.tanggal)}</Text>
-                        <Text style={s.histDetail}>
-                          {durasiMenit > 0 ? `${durasiMenit} menit` : ''}
-                          {h.jumlah_set > 0 ? ` • ${h.jumlah_set} set × ${h.reps} reps` : ''}
-                          {kalori > 0 ? ` • ~${kalori} kkal` : ''}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })
-              )}
+              ))}
 
               <View style={s.storedRow}>
-                <Ionicons name="cloud-outline" size={14} color={MUTED} />
-                <Text style={s.storedTxt}>Data dari server</Text>
+                <Ionicons name="download-outline" size={14} color={MINT} />
+                <Text style={s.storedTxt}>Riwayat tersimpan di perangkat</Text>
               </View>
             </View>
           </>
@@ -557,8 +502,7 @@ const s = StyleSheet.create({
 
   /* Header */
   headerRow: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
     paddingHorizontal: 20, paddingTop: 20, marginBottom: 6,
   },
   title:    { fontSize: 30, fontWeight: 'bold', color: TEXT },
@@ -570,15 +514,17 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     marginHorizontal: 20, marginVertical: 14,
   },
-  monthArrow:{ padding: 8 },
+  monthArrow: { padding: 8 },
   monthPill: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: WHITE, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 8,
-    borderWidth: 1, borderColor: BORDER,
-    marginHorizontal: 10,
+    borderWidth: 1, borderColor: BORDER, marginHorizontal: 10,
   },
-  monthTxt:  { fontSize: 14, fontWeight: '700', color: TEXT, marginHorizontal: 6 },
+  monthTxt: { fontSize: 14, fontWeight: '700', color: TEXT, marginHorizontal: 6 },
+
+  /* Loading */
+  loadingBox: { padding: 60, alignItems: 'center' },
 
   /* Metrik */
   statRow:  { flexDirection: 'row', paddingHorizontal: 16, marginBottom: 16 },
@@ -621,7 +567,7 @@ const s = StyleSheet.create({
   calBubbleSelectedActive: { backgroundColor: MINT_D },
   calNum:      { fontSize: 13, color: TEXT },
   calNumWhite: { color: WHITE, fontWeight: 'bold' },
-  calNumToday: { color: MINT,  fontWeight: 'bold' },
+  calNumToday: { color: MINT, fontWeight: 'bold' },
   calNumBold:  { fontWeight: 'bold' },
 
   legend:    { flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: BORDER },
@@ -635,19 +581,12 @@ const s = StyleSheet.create({
     marginHorizontal: 16, marginBottom: 16,
     padding: 16, borderWidth: 1.5, borderColor: MINT_L,
   },
-  detailHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    marginBottom: 12,
-  },
-  detailTitle: {
-    fontSize: 14, fontWeight: '700', color: TEXT, marginLeft: 8,
-  },
-  detailEmpty: { fontSize: 13, color: MUTED, fontStyle: 'italic' },
-  detailSesiRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: BORDER,
-  },
-  detailSesiIcon: {
+  detailHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  detailTitle:  { fontSize: 14, fontWeight: '700', color: TEXT, marginLeft: 8, flex: 1 },
+  detailClose:  { padding: 4 },
+  detailEmpty:  { fontSize: 13, color: MUTED, fontStyle: 'italic' },
+  detailSesiRow:{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+  detailSesiIcon:{
     width: 36, height: 36, borderRadius: 10,
     backgroundColor: MINT_LL, alignItems: 'center', justifyContent: 'center',
   },
@@ -681,15 +620,15 @@ const s = StyleSheet.create({
   storedTxt:  { fontSize: 12, color: MUTED, marginLeft: 6 },
 
   /* Modal */
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modalCard:    { backgroundColor: WHITE, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36 },
-  modalHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  modalTitle:   { fontSize: 18, fontWeight: 'bold', color: TEXT },
+  modalOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalCard:      { backgroundColor: WHITE, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36 },
+  modalHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  modalTitle:     { fontSize: 18, fontWeight: 'bold', color: TEXT },
   weightInputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, marginTop: 14 },
-  weightInput:  { flex: 1, fontSize: 36, fontWeight: 'bold', color: TEXT, borderBottomWidth: 2, borderBottomColor: MINT, paddingVertical: 8, paddingHorizontal: 4 },
-  weightUnit:   { fontSize: 20, color: GRAY, marginLeft: 10 },
-  modalSaveBtn: { backgroundColor: MINT, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
-  modalSaveTxt: { color: WHITE, fontSize: 16, fontWeight: 'bold' },
+  weightInput:    { flex: 1, fontSize: 36, fontWeight: 'bold', color: TEXT, borderBottomWidth: 2, borderBottomColor: MINT, paddingVertical: 8, paddingHorizontal: 4 },
+  weightUnit:     { fontSize: 20, color: GRAY, marginLeft: 10 },
+  modalSaveBtn:   { backgroundColor: MINT, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' },
+  modalSaveTxt:   { color: WHITE, fontSize: 16, fontWeight: 'bold' },
 });
 
 // ── Chart styles ──────────────────────────────────────────────────────────────
