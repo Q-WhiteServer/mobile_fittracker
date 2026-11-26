@@ -15,8 +15,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme';
+import { KEYS } from '../storage';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
@@ -35,10 +37,24 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const user = await login(email, password);
-      Alert.alert('Berhasil', `Selamat datang, ${user.nama_lengkap}!`);
-      router.replace('/home');
+      // Cek apakah onboarding sudah dilakukan
+      const onboardDone = await AsyncStorage.getItem(KEYS.ONBOARDING);
+      if (onboardDone === 'true') {
+        router.replace('/home');
+      } else {
+        router.replace('/onboarding');
+      }
     } catch (error) {
-      Alert.alert('Login Gagal', error.message);
+      // Pesan offline yang ramah
+      if (error.isNetwork) {
+        Alert.alert(
+          'Tidak Ada Koneksi',
+          'Login memerlukan koneksi internet. Pastikan kamu terhubung ke Wi-Fi atau data seluler, lalu coba lagi.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Login Gagal', error.message);
+      }
     } finally {
       setLoading(false);
     }

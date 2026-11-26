@@ -1,11 +1,15 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Alert, Modal, TextInput } from 'react-native';
+import { useState, useCallback } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createPlan } from '../../localStore';
 import { getCachedExercises } from '../../localStore';
-import { Field, Card, Button, Badge, EmptyState, SectionHeader, Chip } from '../../components/ui';
-import { colors, typography } from '../../theme';
+import { Field, Card, Button, EmptyState, Chip } from '../../components/ui';
+import { colors } from '../../theme';
+
+const EDIT_RESULT_KEY = '@fittracker_edit_exercise_result';
+const ADD_EXERCISE_KEY = '@fittracker_add_exercise_result';
 
 const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const FOKUS_LIST = ['Seluruh tubuh', 'Otot Perut', 'Lengan', 'Dada'];
@@ -24,38 +28,39 @@ export default function PlanCreateScreen() {
   const [exercises, setExercises] = useState([]);
   const [selected, setSelected] = useState([]); 
   const [saving, setSaving] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [namaGerakan, setNamaGerakan] = useState('');
-  const [kategoriGerakan, setKategoriGerakan] = useState('');
-  const [levelGerakan, setLevelGerakan] = useState('Menengah');
-
-  function handleTambahGerakan() {
-    if (!namaGerakan.trim()) {
-      Alert.alert('Peringatan', 'Nama gerakan wajib diisi.');
-      return;
-    }
-    const id = `custom-${Date.now()}`;
-    setSelected((prev) => [
-      ...prev,
-      {
-        id_exercise: id,
-        nama_gerakan: namaGerakan.trim(),
-        kategori: kategoriGerakan.trim() || 'Lainnya',
-        level_kesulitan: levelGerakan,
-        durasi: 30,
-        target_set: 3,
-        target_reps: 12,
-      },
-    ]);
-    setNamaGerakan('');
-    setKategoriGerakan('');
-    setLevelGerakan('Menengah');
-    setShowAddModal(false);
-  }
 
   useFocusEffect(
     useCallback(() => {
+      // Muat katalog gerakan
       (async () => setExercises(await getCachedExercises()))();
+
+      // Cek apakah ada hasil edit dari halaman edit-exercise
+      (async () => {
+        const raw = await AsyncStorage.getItem(EDIT_RESULT_KEY);
+        if (!raw) return;
+        await AsyncStorage.removeItem(EDIT_RESULT_KEY);
+        const edited = JSON.parse(raw);
+        setSelected((prev) =>
+          prev.map((ex) =>
+            ex.id_exercise === edited.id_exercise
+              ? { ...ex, nama_gerakan: edited.nama_gerakan, target_set: edited.target_set, target_reps: edited.target_reps, istirahat: edited.istirahat, durasi: edited.durasi }
+              : ex
+          )
+        );
+      })();
+
+      // Cek apakah ada gerakan baru dari halaman add-exercise
+      (async () => {
+        const raw = await AsyncStorage.getItem(ADD_EXERCISE_KEY);
+        if (!raw) return;
+        await AsyncStorage.removeItem(ADD_EXERCISE_KEY);
+        const gerakan = JSON.parse(raw);
+        setSelected((prev) => {
+          // Hindari duplikat
+          if (prev.some((ex) => ex.id_exercise === gerakan.id_exercise)) return prev;
+          return [...prev, gerakan];
+        });
+      })();
     }, [])
   );
 
@@ -159,6 +164,8 @@ export default function PlanCreateScreen() {
       ) : (
         exercises.map((ex) => {
           const on = selected.some((s) => s.id_exercise === ex.id_exercise);
+          // Ambil data terbaru dari selected jika sudah diedit
+          const exData = selected.find((s) => s.id_exercise === ex.id_exercise) || ex;
           return (
             <Pressable key={ex.id_exercise} onPress={() => toggle(ex)}>
               <Card style={[styles.itemCard, on && styles.itemCardActive]}>
@@ -170,75 +177,45 @@ export default function PlanCreateScreen() {
                 </View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.exTitle}>{ex.nama_gerakan}</Text>
-                  <Text style={styles.exMeta}>3 set × 12 repetisi • Istirahat 45 detik</Text>
+                  <Text style={styles.exMeta}>
+                    {exData.target_set || 3} set × {exData.target_reps || 12} repetisi • Istirahat {exData.istirahat || 45} detik
+                  </Text>
                 </View>
-                <Ionicons name="create-outline" size={18} color="#9CA3AF" />
+                {/* Ikon pensil — buka halaman Edit Gerakan */}
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    // Pastikan gerakan sudah masuk daftar selected sebelum edit
+                    if (!on) toggle(ex);
+                    router.push({
+                      pathname: '/plan/edit-exercise',
+                      params: {
+                        id_exercise:     ex.id_exercise,
+                        nama_gerakan:    ex.nama_gerakan,
+                        target_set:      String(exData.target_set  || 3),
+                        target_reps:     String(exData.target_reps || 12),
+                        istirahat:       String(exData.istirahat   || 45),
+                        durasi:          String(ex.durasi || 0),
+                        kategori:        ex.kategori || '',
+                        level_kesulitan: ex.level_kesulitan || '',
+                      },
+                    });
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="create-outline" size={20} color={on ? colors.primary : '#9CA3AF'} />
+                </Pressable>
               </Card>
             </Pressable>
           );
         })
       )}
 
-      {/* Tombol Tambah Gerakan */}
-      <Pressable style={styles.addExerciseButton} onPress={() => setShowAddModal(true)}>
+      {/* Tombol Tambah Gerakan — navigasi ke halaman layar penuh */}
+      <Pressable style={styles.addExerciseButton} onPress={() => router.push('/plan/add-exercise')}>
         <Ionicons name="add" size={18} color={colors.primary} style={{ marginRight: 6 }} />
         <Text style={styles.addExerciseText}>Tambah gerakan</Text>
       </Pressable>
-
-      {/* Modal Tambah Gerakan */}
-      <Modal
-        visible={showAddModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowAddModal(false)}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowAddModal(false)} />
-        <View style={styles.modalSheet}>
-          <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>Tambah Gerakan</Text>
-
-          <Text style={styles.modalLabel}>Nama gerakan *</Text>
-          <TextInput
-            style={styles.modalInput}
-            value={namaGerakan}
-            onChangeText={setNamaGerakan}
-            placeholder="mis. Push Up"
-            placeholderTextColor="#9CA3AF"
-            autoFocus
-          />
-
-          <Text style={styles.modalLabel}>Kategori</Text>
-          <TextInput
-            style={styles.modalInput}
-            value={kategoriGerakan}
-            onChangeText={setKategoriGerakan}
-            placeholder="mis. Dada, Lengan, Core"
-            placeholderTextColor="#9CA3AF"
-          />
-
-          <Text style={styles.modalLabel}>Tingkat kesulitan</Text>
-          <View style={styles.chipsRow}>
-            {['Rendah', 'Menengah', 'Atas'].map((l) => (
-              <Pressable
-                key={l}
-                style={[styles.levelChip, levelGerakan === l && styles.levelChipActive]}
-                onPress={() => setLevelGerakan(l)}
-              >
-                <Text style={[styles.levelChipText, levelGerakan === l && styles.levelChipTextActive]}>
-                  {l}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Pressable style={styles.modalSaveBtn} onPress={handleTambahGerakan}>
-            <Text style={styles.modalSaveBtnText}>Tambahkan</Text>
-          </Pressable>
-          <Pressable style={styles.modalCancelBtn} onPress={() => setShowAddModal(false)}>
-            <Text style={styles.modalCancelText}>Batal</Text>
-          </Pressable>
-        </View>
-      </Modal>
 
       {/* Kartu Estimasi */}
       <View style={styles.estimasiCard}>
@@ -414,91 +391,5 @@ const styles = StyleSheet.create({
     color: '#059669',
     marginTop: 16,
     fontWeight: '500',
-  },
-
-  /* ── Modal Tambah Gerakan ── */
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalSheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 36,
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 16,
-  },
-  modalLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 6,
-    marginTop: 10,
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: '#111827',
-    backgroundColor: '#F9FAFB',
-  },
-  levelChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginRight: 8,
-    marginTop: 4,
-  },
-  levelChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  levelChipText: {
-    fontSize: 13,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  levelChipTextActive: {
-    color: '#FFFFFF',
-  },
-  modalSaveBtn: {
-    backgroundColor: colors.primary,
-    height: 52,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
-  },
-  modalSaveBtnText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  modalCancelBtn: {
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  modalCancelText: {
-    fontSize: 14,
-    color: '#6B7280',
   },
 });

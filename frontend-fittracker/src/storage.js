@@ -4,12 +4,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const TOKEN_KEY = '@fittracker_token';
 const USER_KEY = '@fittracker_user';
 export const KEYS = {
-  EXERCISES: '@fittracker_exercises',
-  PROFILE: '@fittracker_profile',
-  PLANS: '@fittracker_plans',
-  LOGS: '@fittracker_logs',
-  GROUPS: '@fittracker_groups',
-  SETTINGS: '@fittracker_settings',
+  EXERCISES:     '@fittracker_exercises',
+  PROFILE:       '@fittracker_profile',
+  PLANS:         '@fittracker_plans',
+  LOGS:          '@fittracker_logs',
+  GROUPS:        '@fittracker_groups',
+  SETTINGS:      '@fittracker_settings',
+  ONBOARDING:    '@fittracker_onboarding_done',
+  OFFLINE_QUEUE: '@fittracker_offline_queue',   // antrian log yang gagal kirim
+  LAST_SYNC:     '@fittracker_last_sync',        // timestamp sinkronisasi terakhir
 };
 
 // --- Token & user (sesi login) ---
@@ -49,4 +52,35 @@ export async function getSettings() {
 }
 export async function saveSettings(settings) {
   await setJSON(KEYS.SETTINGS, settings);
+}
+
+// --- Helper shortcut: baca/tulis status toggle komunitas ---
+export async function getCommunityEnabled() {
+  const s = await getSettings();
+  return s.communityEnabled !== false;
+}
+export async function setCommunityEnabled(value) {
+  const s = await getSettings();
+  await saveSettings({ ...s, communityEnabled: !!value });
+}
+
+// --- Offline Queue: antrian log latihan yang belum tersinkron ---
+export async function getOfflineQueue() {
+  return (await getJSON(KEYS.OFFLINE_QUEUE)) || [];
+}
+export async function addToOfflineQueue(logData) {
+  const queue = await getOfflineQueue();
+  queue.push({ ...logData, _queuedAt: new Date().toISOString() });
+  await setJSON(KEYS.OFFLINE_QUEUE, queue);
+}
+export async function clearOfflineQueue() {
+  await setJSON(KEYS.OFFLINE_QUEUE, []);
+}
+
+// --- Waktu sinkronisasi terakhir ---
+export async function getLastSync() {
+  return await AsyncStorage.getItem(KEYS.LAST_SYNC);
+}
+export async function setLastSync() {
+  await AsyncStorage.setItem(KEYS.LAST_SYNC, new Date().toISOString());
 }
