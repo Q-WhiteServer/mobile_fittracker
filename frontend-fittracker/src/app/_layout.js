@@ -32,6 +32,7 @@ function RootStack() {
       <Stack.Screen name="group/create" options={{ headerShown: false }} />
       <Stack.Screen name="group/search" options={{ headerShown: false }} />
       <Stack.Screen name="group/chat" options={{ headerShown: false }} />
+      <Stack.Screen name="gif-test"   options={{ headerShown: false }} />
     </Stack>
   );
 }

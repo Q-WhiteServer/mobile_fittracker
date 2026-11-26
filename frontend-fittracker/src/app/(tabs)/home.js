@@ -276,6 +276,19 @@ export default function HomeScreen() {
         </Pressable>
       ))}
 
+      {/* ── Tombol akses GIF Test ── */}
+      <Pressable
+        style={s.gifTestBtn}
+        onPress={() => router.push('/gif-test')}
+      >
+        <Text style={s.gifTestIcon}>🎞️</Text>
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <Text style={s.gifTestTitle}>Test GIF Animasi</Text>
+          <Text style={s.gifTestSub}>Ketuk untuk buka halaman percobaan GIF</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+      </Pressable>
+
     </ScrollView>
   );
 }
@@ -413,4 +426,15 @@ const s = StyleSheet.create({
   },
   programTitle: { fontSize: 15, fontWeight: 'bold', color: '#111827' },
   programMeta:  { fontSize: 12, color: '#6B7280', marginTop: 2, marginBottom: 4 },
+
+  /* GIF Test button */
+  gifTestBtn: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#FFFFFF', borderRadius: 16,
+    borderWidth: 1.5, borderColor: '#E5E7EB',
+    padding: 14, marginTop: 4,
+  },
+  gifTestIcon:  { fontSize: 24 },
+  gifTestTitle: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  gifTestSub:   { fontSize: 12, color: '#6B7280', marginTop: 2 },
 });
