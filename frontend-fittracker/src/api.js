@@ -105,4 +105,8 @@ export const api = {
   getWeights: (bulan) => request(`/weight${bulan ? `?bulan=${bulan}` : ''}`, { method: 'GET' }),
   logWeight: (body) => request('/weight', { method: 'POST', body: JSON.stringify(body) }),
   deleteWeight: (tanggal) => request(`/weight/${tanggal}`, { method: 'DELETE' }),
+
+  // US-07: Preferensi notifikasi & pengingat (user_settings)
+  getSettings: () => request('/settings', { method: 'GET' }),
+  saveSettings: (body) => request('/settings', { method: 'PUT', body: JSON.stringify(body) }),
 };

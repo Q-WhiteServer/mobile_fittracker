@@ -909,6 +909,31 @@ app.get('/reports/monthly', authMiddleware, async (req, res) => {
   }
 });
 
+// ===========================================================================
+// US-07: PREFERENSI PENGINGAT & NOTIFIKASI (USER SETTINGS)
+// ===========================================================================
+// CATATAN: Preferensi notifikasi (settings) disimpan di AsyncStorage frontend.
+// Endpoint ini hanya stub agar api.js tidak error — tidak query database.
+// ===========================================================================
+
+// GET /settings -> kembalikan default (preferensi dikelola di AsyncStorage frontend)
+app.get('/settings', authMiddleware, (req, res) => {
+  return res.json({
+    settings: {
+      reminder_enabled:    false,
+      reminder_time:       '17:00',
+      community_enabled:   true,
+      next_schedule_label: null,
+    },
+  });
+});
+
+// PUT /settings -> terima payload, abaikan (tidak ada query DB)
+app.put('/settings', authMiddleware, (req, res) => {
+  return res.json({ pesan: 'Pengaturan disimpan di perangkat.' });
+});
+
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server berjalan di http://localhost:${PORT}`);

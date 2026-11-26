@@ -42,36 +42,29 @@ const SCREEN_W = Dimensions.get('window').width;
 const CHART_H  = 140;
 const CHART_W  = SCREEN_W - 64;
 
-// ── Mock data ─────────────────────────────────────────────────────────────────
-// Tanggal yang ada latihan (bulan Oktober 2026)
-const LATIHAN_DATES = {
-  '2026-10-01': [{ nama: 'Core & Kekuatan',    durasi: 25, kalori: 180 }],
-  '2026-10-03': [{ nama: 'Kardio Ringan',       durasi: 20, kalori: 150 }],
-  '2026-10-05': [{ nama: 'Full Body Kekuatan', durasi: 30, kalori: 210 }],
-  '2026-10-07': [{ nama: 'Yoga & Mobilitas',   durasi: 25, kalori: 160 }],
-  '2026-10-09': [{ nama: 'Upper Body',          durasi: 28, kalori: 195 }],
-  '2026-10-10': [{ nama: 'Yoga & Mobilitas',   durasi: 25, kalori: 160 }],
-  '2026-10-12': [{ nama: 'Full Body Kekuatan', durasi: 30, kalori: 210 }],
-  '2026-10-13': [{ nama: 'Lengan & Dada',      durasi: 24, kalori: 165 }],
-};
-
-const WEIGHT_POINTS = [
-  { tanggal: '2026-10-01', berat: 69.0 },
-  { tanggal: '2026-10-05', berat: 68.5 },
-  { tanggal: '2026-10-09', berat: 68.0 },
-  { tanggal: '2026-10-14', berat: 67.8 },
-];
-
-const RIWAYAT = [
-  { id: '1', nama: 'Lengan & Dada',      tanggal: 'Sel, 13 Okt • 18.00', detail: '24 menit • Estimasi 165 kkal' },
-  { id: '2', nama: 'Full Body Kekuatan', tanggal: 'Sen, 12 Okt • 18.00', detail: '30 menit • Estimasi 210 kkal' },
-  { id: '3', nama: 'Yoga & Mobilitas',   tanggal: 'Sab, 10 Okt • 08.00', detail: '25 menit • Estimasi 160 kkal' },
-];
+// (Semua mock data dihapus — data sepenuhnya dari API)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysInMonth(y, m)  { return new Date(y, m, 0).getDate(); }
 function firstWeekday(y, m) { const d = new Date(y, m-1, 1).getDay(); return d === 0 ? 6 : d-1; }
 function padDate(y, m, d)   { return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+
+// Format tanggal dari YYYY-MM-DD ke "Sen, 1 Okt • HH.MM"
+function fmtRiwayatTanggal(tanggalStr) {
+  try {
+    const [y, mo, d] = tanggalStr.slice(0, 10).split('-').map(Number);
+    const date = new Date(y, mo - 1, d);
+    const hari = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'][date.getDay()];
+    return `${hari}, ${d} ${MONTHS[mo-1].slice(0,3)}`;
+  } catch { return tanggalStr; }
+}
+
+// Estimasi kalori dari set × reps × 0.3 (sama dengan logika backend)
+function estimasiKalori(jumlah_set, reps, durasi) {
+  const dariSet   = (jumlah_set || 0) * (reps || 0) * 0.3;
+  const dariDurasi = (durasi || 0) * 0.1;      // ~6 kkal/menit
+  return Math.round(dariSet + dariDurasi);
+}
 
 // ── Line Chart (pure View) ────────────────────────────────────────────────────
 function LineChart({ points }) {
@@ -175,9 +168,8 @@ function StatCard({ icon, value, unit, label }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ReportsScreen() {
   const now   = new Date();
-  // Default ke Oktober 2026 agar mock data LATIHAN_DATES langsung terlihat
-  const [year,  setYear]  = useState(2026);
-  const [month, setMonth] = useState(10);
+  const [year,  setYear]  = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
   const [data,  setData]  = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -187,21 +179,22 @@ export default function ReportsScreen() {
   // Modal catat berat
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [weightInput,     setWeightInput]     = useState('');
+  const [savingWeight,    setSavingWeight]     = useState(false);
 
   const bulanStr = `${year}-${String(month).padStart(2,'0')}`;
-  // isNow: cegah navigasi maju melewati bulan saat ini
   const isNow = year > now.getFullYear() ||
     (year === now.getFullYear() && month >= now.getMonth() + 1);
 
   useFocusEffect(useCallback(() => {
-    // Coba ambil dari API, fallback ke mock
     (async () => {
       setLoading(true);
+      setData(null);
+      setSelectedDate(null);
       try {
         const res = await api.getMonthlyReport(bulanStr);
         setData(res);
       } catch {
-        setData(null); // pakai mock
+        setData(null);
       } finally {
         setLoading(false);
       }
@@ -221,8 +214,33 @@ export default function ReportsScreen() {
   }
 
   async function handleShare() {
-    const msg = `📊 Laporan FitTracker — ${MONTHS[month-1]} ${year}\n🏋️ 8 sesi • ⏱ 214 menit • 🔥 1.460 kkal`;
+    const s = data?.summary;
+    const totalSesiShare  = s?.total_sesi ?? 0;
+    const totalMenitShare = Math.round((s?.total_durasi_detik ?? 0) / 60);
+    const totalKalShare   = Math.round(s?.estimasi_kalori ?? 0).toLocaleString('id-ID');
+    const msg = `📊 Laporan FitTracker — ${MONTHS[month-1]} ${year}\n🏋️ ${totalSesiShare} sesi • ⏱ ${totalMenitShare} menit • 🔥 ${totalKalShare} kkal`;
     try { await Share.share({ message: msg }); } catch {}
+  }
+
+  async function saveWeight() {
+    const v = parseFloat(weightInput.replace(',', '.'));
+    if (isNaN(v) || v < 20 || v > 500) {
+      Alert.alert('Peringatan', 'Masukkan berat yang valid (20–500 kg).'); return;
+    }
+    setSavingWeight(true);
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      await api.logWeight({ berat: v, tanggal: todayStr });
+      setShowWeightModal(false);
+      setWeightInput('');
+      // Reload data laporan agar grafik terupdate
+      const res = await api.getMonthlyReport(bulanStr);
+      setData(res);
+    } catch (e) {
+      Alert.alert('Gagal', e.message);
+    } finally {
+      setSavingWeight(false);
+    }
   }
 
   // ── Kalender ─────────────────────────────────────────────────────────────────
@@ -233,21 +251,37 @@ export default function ReportsScreen() {
   for (let d = 1; d <= totalDays; d++) calCells.push(d);
   while (calCells.length % 7 !== 0) calCells.push(null);
 
-  // Tanggal hari ini (hanya berlaku jika sedang menampilkan bulan & tahun yang sama)
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
   const todayNum = isCurrentMonth ? now.getDate() : null;
 
-  // Sesi untuk tanggal terpilih
-  const selectedKey  = selectedDate ? padDate(year, month, selectedDate) : null;
-  const selectedSesi = selectedKey ? (LATIHAN_DATES[selectedKey] || []) : [];
+  // Set hari yang ada latihan dari response API (data.hari_latihan = [{hari, sesi}])
+  const hariLatihanSet = new Set(
+    (data?.hari_latihan || []).map((h) => Number(h.hari))
+  );
 
-  // ── Mock summary ──────────────────────────────────────────────────────────────
-  const summary = data?.summary || { total_sesi: 8, total_durasi_detik: 12840, estimasi_kalori: 1460 };
-  const totalSesi   = summary.total_sesi        || 8;
-  const totalMenit  = Math.round((summary.total_durasi_detik || 12840) / 60);
-  const totalKalori = (summary.estimasi_kalori || 1460).toLocaleString('id-ID');
+  // Riwayat latihan dari history API
+  const history = data?.history || [];
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // Sesi pada tanggal yang dipilih (cari dari history)
+  const selectedSesi = selectedDate
+    ? history.filter((h) => {
+        const d = Number(h.tanggal?.slice(8, 10));
+        return d === selectedDate;
+      })
+    : [];
+
+  // ── Summary ───────────────────────────────────────────────────────────────
+  const summary    = data?.summary || {};
+  const totalSesi  = summary.total_sesi ?? 0;
+  const totalMenit = Math.round((summary.total_durasi_detik ?? 0) / 60);
+  const totalKalori= Math.round(summary.estimasi_kalori ?? 0).toLocaleString('id-ID');
+
+  // ── Berat ─────────────────────────────────────────────────────────────────
+  const weightPoints = data?.weight_history || [];
+  const beratNow     = data?.berat_saat_ini ? Number(data.berat_saat_ini) : null;
+  const beratDelta   = data?.berat_delta    ? Number(data.berat_delta)    : null;
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={s.safe}>
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
@@ -279,8 +313,9 @@ export default function ReportsScreen() {
         </View>
 
         {loading ? (
-          <View style={{ padding: 40, alignItems: 'center' }}>
+          <View style={{ padding: 60, alignItems: 'center' }}>
             <ActivityIndicator size="large" color={MINT} />
+            <Text style={{ marginTop: 12, color: MUTED, fontSize: 14 }}>Memuat laporan...</Text>
           </View>
         ) : (
           <>
@@ -294,24 +329,17 @@ export default function ReportsScreen() {
             {/* ── Kalender Latihan Interaktif ── */}
             <View style={s.card}>
               <Text style={s.cardTitle}>Kalender latihan</Text>
-
-              {/* Header hari */}
               <View style={s.calRow}>
                 {DAYS_SHORT.map((d) => (
                   <Text key={d} style={s.calHdr}>{d}</Text>
                 ))}
               </View>
-
-              {/* Grid tanggal */}
               <View style={s.calGrid}>
                 {calCells.map((d, i) => {
                   if (!d) return <View key={`e${i}`} style={s.calCell} />;
-
-                  const dateKey   = padDate(year, month, d);
-                  const hasLatih  = !!LATIHAN_DATES[dateKey];
-                  const isToday   = isNow && d === todayNum;
-                  const isSelected= d === selectedDate;
-
+                  const hasLatih   = hariLatihanSet.has(d);
+                  const isToday    = todayNum !== null && d === todayNum;
+                  const isSelected = d === selectedDate;
                   return (
                     <Pressable
                       key={d}
@@ -320,15 +348,15 @@ export default function ReportsScreen() {
                     >
                       <View style={[
                         s.calBubble,
-                        hasLatih  && s.calBubbleActive,
-                        isToday   && !hasLatih && s.calBubbleToday,
+                        hasLatih   && s.calBubbleActive,
+                        isToday    && !hasLatih && s.calBubbleToday,
                         isSelected && !hasLatih && s.calBubbleSelected,
                         isSelected && hasLatih  && s.calBubbleSelectedActive,
                       ]}>
                         <Text style={[
                           s.calNum,
-                          hasLatih  && s.calNumWhite,
-                          isToday   && !hasLatih && s.calNumToday,
+                          hasLatih   && s.calNumWhite,
+                          isToday    && !hasLatih && s.calNumToday,
                           isSelected && s.calNumBold,
                         ]}>
                           {d}
@@ -338,8 +366,6 @@ export default function ReportsScreen() {
                   );
                 })}
               </View>
-
-              {/* Legenda */}
               <View style={s.legend}>
                 <View style={[s.legendDot, { backgroundColor: MINT }]} />
                 <Text style={s.legendTxt}>Latihan selesai</Text>
@@ -348,7 +374,7 @@ export default function ReportsScreen() {
               </View>
             </View>
 
-            {/* ── Panel Detail Tanggal (muncul saat tanggal diklik) ── */}
+            {/* ── Panel Detail Tanggal ── */}
             {selectedDate !== null && (
               <View style={s.detailPanel}>
                 <View style={s.detailHeader}>
@@ -364,19 +390,20 @@ export default function ReportsScreen() {
                     <Ionicons name="close" size={18} color={MUTED} />
                   </Pressable>
                 </View>
-
                 {selectedSesi.length === 0 ? (
                   <Text style={s.detailEmpty}>Belum ada latihan tercatat pada tanggal ini.</Text>
                 ) : (
                   selectedSesi.map((sesi, idx) => (
-                    <View key={idx} style={s.detailSesiRow}>
+                    <View key={sesi.id_log ?? idx} style={s.detailSesiRow}>
                       <View style={s.detailSesiIcon}>
                         <Ionicons name="fitness-outline" size={18} color={MINT} />
                       </View>
                       <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={s.detailSesiNama}>{sesi.nama}</Text>
+                        <Text style={s.detailSesiNama}>{sesi.nama_gerakan || sesi.nama_plan || 'Latihan'}</Text>
                         <Text style={s.detailSesiMeta}>
-                          {sesi.durasi} menit • {sesi.kalori} kkal
+                          {Math.round((sesi.durasi || 0) / 60)} menit
+                          {sesi.jumlah_set > 0 ? ` • ${sesi.jumlah_set} set × ${sesi.reps} reps` : ''}
+                          {sesi.beban > 0 ? ` • ${sesi.beban} kg` : ''}
                         </Text>
                       </View>
                       <Ionicons name="chevron-forward" size={16} color={MUTED} />
@@ -392,49 +419,93 @@ export default function ReportsScreen() {
                 <Text style={s.cardTitle}>Perkembangan berat</Text>
                 <Pressable
                   style={s.addWeightBtn}
-                  onPress={() => { setWeightInput('67.8'); setShowWeightModal(true); }}
+                  onPress={() => { setWeightInput(beratNow ? String(beratNow) : ''); setShowWeightModal(true); }}
                 >
                   <Ionicons name="add" size={16} color={MINT} />
                   <Text style={s.addWeightTxt}>Catat</Text>
                 </Pressable>
               </View>
-              <View style={s.weightHeadRow}>
-                <Text style={s.weightVal}>67,8 kg</Text>
-                <View style={s.deltaBadge}>
-                  <Ionicons name="trending-down" size={13} color={MINT} />
-                  <Text style={s.deltaTxt}>↓ 1,2 kg bulan ini</Text>
+
+              {beratNow ? (
+                <>
+                  <View style={s.weightHeadRow}>
+                    <Text style={s.weightVal}>{Number(beratNow).toFixed(1).replace('.', ',')} kg</Text>
+                    {beratDelta !== null && (
+                      <View style={s.deltaBadge}>
+                        <Ionicons
+                          name={beratDelta <= 0 ? 'trending-down' : 'trending-up'}
+                          size={13}
+                          color={MINT}
+                        />
+                        <Text style={s.deltaTxt}>
+                          {beratDelta <= 0 ? '↓' : '↑'} {Math.abs(beratDelta).toFixed(1).replace('.', ',')} kg bulan ini
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <LineChart points={weightPoints} />
+                </>
+              ) : (
+                <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                  <Ionicons name="scale-outline" size={36} color={BORDER} />
+                  <Text style={{ color: MUTED, marginTop: 8, fontSize: 13 }}>
+                    Belum ada data berat bulan ini.
+                  </Text>
+                  <Text style={{ color: MUTED, fontSize: 12, marginTop: 4 }}>
+                    Tap "Catat" untuk menambah data berat.
+                  </Text>
                 </View>
-              </View>
-              <LineChart points={WEIGHT_POINTS} />
+              )}
             </View>
 
-            {/* ── Riwayat Latihan ── */}
+            {/* ── Riwayat Latihan dari API ── */}
             <View style={s.card}>
               <View style={s.cardTitleRow}>
                 <Text style={s.cardTitle}>Riwayat latihan</Text>
-                <Text style={s.cardRight}>Semua {totalSesi} sesi</Text>
+                <Text style={s.cardRight}>
+                  {totalSesi > 0 ? `${totalSesi} sesi` : 'Belum ada'}
+                </Text>
               </View>
-              {RIWAYAT.map((h, idx, arr) => (
-                <View
-                  key={h.id}
-                  style={[
-                    s.histRow,
-                    idx < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: BORDER },
-                  ]}
-                >
-                  <View style={s.histIcon}>
-                    <Ionicons name="checkmark-circle" size={24} color={MINT} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.histName}>{h.nama}</Text>
-                    <Text style={s.histDate}>{h.tanggal}</Text>
-                    <Text style={s.histDetail}>{h.detail}</Text>
-                  </View>
+
+              {history.length === 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                  <Ionicons name="barbell-outline" size={36} color={BORDER} />
+                  <Text style={{ color: MUTED, marginTop: 8, fontSize: 13 }}>
+                    Belum ada latihan di {MONTHS[month-1]} {year}.
+                  </Text>
                 </View>
-              ))}
+              ) : (
+                history.map((h, idx) => {
+                  const kalori = estimasiKalori(h.jumlah_set, h.reps, h.durasi);
+                  const durasiMenit = Math.round((h.durasi || 0) / 60);
+                  return (
+                    <View
+                      key={h.id_log ?? idx}
+                      style={[
+                        s.histRow,
+                        idx < history.length - 1 && { borderBottomWidth: 1, borderBottomColor: BORDER },
+                      ]}
+                    >
+                      <View style={s.histIcon}>
+                        <Ionicons name="checkmark-circle" size={24} color={MINT} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.histName}>{h.nama_gerakan || h.nama_plan || 'Latihan'}</Text>
+                        <Text style={s.histDate}>{fmtRiwayatTanggal(h.tanggal)}</Text>
+                        <Text style={s.histDetail}>
+                          {durasiMenit > 0 ? `${durasiMenit} menit` : ''}
+                          {h.jumlah_set > 0 ? ` • ${h.jumlah_set} set × ${h.reps} reps` : ''}
+                          {kalori > 0 ? ` • ~${kalori} kkal` : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+
               <View style={s.storedRow}>
-                <Ionicons name="download-outline" size={14} color={MUTED} />
-                <Text style={s.storedTxt}>Riwayat tersimpan di perangkat</Text>
+                <Ionicons name="cloud-outline" size={14} color={MUTED} />
+                <Text style={s.storedTxt}>Data dari server</Text>
               </View>
             </View>
           </>
@@ -464,13 +535,13 @@ export default function ReportsScreen() {
               <Text style={s.weightUnit}>kg</Text>
             </View>
             <Pressable
-              style={s.modalSaveBtn}
-              onPress={() => {
-                Alert.alert('Tersimpan', `Berat ${weightInput} kg berhasil dicatat.`);
-                setShowWeightModal(false);
-              }}
+              style={[s.modalSaveBtn, savingWeight && { opacity: 0.6 }]}
+              onPress={saveWeight}
+              disabled={savingWeight}
             >
-              <Text style={s.modalSaveTxt}>Simpan</Text>
+              {savingWeight
+                ? <ActivityIndicator color={WHITE} />
+                : <Text style={s.modalSaveTxt}>Simpan</Text>}
             </Pressable>
           </View>
         </View>

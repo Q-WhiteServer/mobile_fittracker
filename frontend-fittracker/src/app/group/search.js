@@ -7,6 +7,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api } from '../../api';
+import { getCommunityEnabled } from '../../storage';
+import { sendCommunityNotification } from '../../notifications';
 
 const MINT = '#10B981';
 const MINT_LIGHT = '#D1FAE5';
@@ -115,6 +117,11 @@ export default function GroupSearchScreen() {
         pathname: '/group/chat',
         params: { id: id_group, nama: nama_group, anggota: jumlah_anggota },
       });
+      // Kirim notifikasi komunitas hanya jika toggle aktif
+      const enabled = await getCommunityEnabled();
+      if (enabled) {
+        await sendCommunityNotification('join', nama_group);
+      }
     } catch (e) {
       /* sudah gabung atau offline */
     } finally {
