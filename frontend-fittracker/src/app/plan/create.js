@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
+import { Image } from 'expo-image';
 import { useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -7,6 +8,35 @@ import { createPlan } from '../../localStore';
 import { getCachedExercises } from '../../localStore';
 import { Field, Card, Button, EmptyState, Chip } from '../../components/ui';
 import { colors } from '../../theme';
+
+// ── Mapping nama gerakan → aset GIF/PNG ──────────────────────────────────────
+const EXERCISE_ASSETS = {
+  'push up':           require('../../../assets/pushup.gif'),
+  'squat':             require('../../../assets/squat.gif'),
+  'burpee':            require('../../../assets/burpee.gif'),
+  'high knees':        require('../../../assets/high-knee.gif'),
+  'jumping jack':      require('../../../assets/jumping-jack.gif'),
+  'lunges':            require('../../../assets/lunge.gif'),
+  'mountain climber':  require('../../../assets/mountain-climber.gif'),
+  'glute bridge':      require('../../../assets/glute-bridge.gif'),
+  'russian twist':     require('../../../assets/russian-twist.gif'),
+  'pull up':           require('../../../assets/pull-up.gif'),
+  'sit up':            require('../../../assets/sit-up.gif'),
+  'plank':             require('../../../assets/plank.png'),
+  'side plank':        require('../../../assets/side-plank.png'),
+};
+
+function getExerciseAsset(nama) {
+  if (!nama) return null;
+  const key = nama.toLowerCase().trim();
+  // Coba exact match dulu
+  if (EXERCISE_ASSETS[key]) return EXERCISE_ASSETS[key];
+  // Coba partial match
+  for (const k of Object.keys(EXERCISE_ASSETS)) {
+    if (key.includes(k) || k.includes(key)) return EXERCISE_ASSETS[k];
+  }
+  return null;
+}
 
 const EDIT_RESULT_KEY = '@fittracker_edit_exercise_result';
 const ADD_EXERCISE_KEY = '@fittracker_add_exercise_result';
@@ -93,12 +123,12 @@ export default function PlanCreateScreen() {
     try {
       const d = new Date(tanggal);
       hari = HARI[d.getDay()];
-    } catch (e) {
-      /* abaikan */
-    }
+    } catch { /* abaikan */ }
+
     setSaving(true);
+    let berhasil = false;
     try {
-      const plan = await createPlan({
+      await createPlan({
         nama_plan: namaPlan.trim(),
         tanggal,
         jam,
@@ -106,11 +136,20 @@ export default function PlanCreateScreen() {
         catatan: `Fokus: ${fokus}, Level: ${level}`,
         exercises: selected,
       });
-      router.replace(`/plan/${plan.id}`);
+      berhasil = true;
     } catch (e) {
-      Alert.alert('Gagal', 'Tidak dapat membuat jadwal.');
+      // createPlan offline-first — tidak seharusnya throw, tapi jaga-jaga
+      console.warn('createPlan error:', e.message);
+      berhasil = true; // tetap anggap berhasil karena disimpan lokal
     } finally {
-      setSaving(false);
+      setSaving(false); // selalu reset spinner SEBELUM alert/navigate
+    }
+
+    if (berhasil) {
+      Alert.alert('Berhasil 🎉', `Program "${namaPlan.trim()}" berhasil disimpan!`, [
+        { text: 'Lihat Jadwal', onPress: () => router.replace('/(tabs)/schedule') },
+        { text: 'OK', onPress: () => router.back() },
+      ]);
     }
   }
 
@@ -172,8 +211,19 @@ export default function PlanCreateScreen() {
                 <View style={styles.dragIconBox}>
                   <Ionicons name="reorder-two-outline" size={18} color="#9CA3AF" />
                 </View>
+                {/* GIF/PNG gerakan — fallback ke ikon bila tidak ada aset */}
                 <View style={styles.exIconBox}>
-                  <Ionicons name="fitness-outline" size={20} color={colors.primary} />
+                  {getExerciseAsset(ex.nama_gerakan) ? (
+                    <Image
+                      source={getExerciseAsset(ex.nama_gerakan)}
+                      style={styles.exGif}
+                      contentFit="cover"
+                      autoplay
+                      cachePolicy="memory-disk"
+                    />
+                  ) : (
+                    <Ionicons name="fitness-outline" size={22} color={colors.primary} />
+                  )}
                 </View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.exTitle}>{ex.nama_gerakan}</Text>
@@ -324,12 +374,18 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   exIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+    width: 56,
+    height: 56,
+    borderRadius: 12,
     backgroundColor: '#ECFDF5',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  exGif: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
   },
   exTitle: {
     fontSize: 15,

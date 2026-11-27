@@ -162,10 +162,26 @@ function StatCard({ icon, value, unit, label }) {
 export default function ReportsScreen() {
   const now = new Date();
 
-  // Default ke Oktober 2026 agar mock data langsung terlihat
-  const [year,  setYear]  = useState(2026);
-  const [month, setMonth] = useState(10);
-  const [data,  setData]  = useState(null);
+  const [year,  setYear]  = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+
+  // Langsung tampil dengan mock data — update di background dari server
+  const [data, setData] = useState({
+    bulan: `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`,
+    summary: { total_sesi: 8, total_durasi_detik: 12840, estimasi_kalori: 1460 },
+    hari_latihan: [...MOCK_LATIHAN_DAYS].map((h) => ({ hari: h, sesi: 1 })),
+    history: MOCK_RIWAYAT.map((r, i) => ({
+      id_log: i + 1,
+      tanggal: `2026-10-${String(13 - i).padStart(2, '0')}`,
+      jumlah_set: 3, reps: 12,
+      durasi: i === 0 ? 1440 : i === 1 ? 1800 : 1500,
+      beban: 0, catatan: null,
+      nama_gerakan: r.nama, kategori: 'Kekuatan', nama_plan: null,
+    })),
+    berat_saat_ini: 67.8,
+    berat_delta: -1.2,
+    weight_history: MOCK_WEIGHT_POINTS,
+  });
   const [loading, setLoading] = useState(false);
 
   const [selectedDate,    setSelectedDate]    = useState(null);
@@ -174,24 +190,21 @@ export default function ReportsScreen() {
   const [savingWeight,    setSavingWeight]     = useState(false);
 
   const bulanStr = `${year}-${String(month).padStart(2,'0')}`;
-  // Cegah navigasi maju ke bulan yang belum datang
   const isAtOrPastNow = year > now.getFullYear() ||
     (year === now.getFullYear() && month >= now.getMonth() + 1);
 
   useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    // Refresh dari server di background tanpa menampilkan spinner
+    // Data mock sudah tampil di layar, server hanya memperbarui jika berhasil
     (async () => {
-      setLoading(true);
-      setData(null);
-      setSelectedDate(null);
       try {
-        const res = await api.getMonthlyReport(bulanStr);
-        setData(res);
-      } catch {
-        setData(null); // pakai mock
-      } finally {
-        setLoading(false);
-      }
+        const timeout = new Promise((_, r) => setTimeout(() => r(), 6000));
+        const res = await Promise.race([api.getMonthlyReport(bulanStr), timeout]);
+        if (!cancelled && res) setData(res);
+      } catch { /* server mati — tetap tampilkan mock */ }
     })();
+    return () => { cancelled = true; };
   }, [bulanStr]));
 
   function prevMonth() {

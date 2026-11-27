@@ -40,45 +40,51 @@ const MOCK_AKTIVITAS = [
 ];
 
 export default function GroupsScreen() {
-  const [groups, setGroups] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [groups,  setGroups]  = useState([]);
+  const [loading, setLoading] = useState(false); // mulai false — langsung tampil
   const [offline, setOffline] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [nama, setNama] = useState('');
+  const [nama,      setNama]      = useState('');
   const [deskripsi, setDeskripsi] = useState('');
-  const [saving, setSaving] = useState(false);
-  // Badge jumlah aktivitas baru (reset saat tab dibuka)
+  const [saving,    setSaving]    = useState(false);
   const [newActivityCount, setNewActivityCount] = useState(0);
-  // Status toggle komunitas dari AsyncStorage
-  const [communityOn, setCommunityOn] = useState(true);
+  const [communityOn,      setCommunityOn]      = useState(true);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    // Baca status toggle komunitas
-    const enabled = await getCommunityEnabled();
-    setCommunityOn(enabled);
+    // Muat cache lokal dulu (instan, tidak ada spinner)
     try {
-      const res = await api.getGroups();
-      const fresh = res.groups || [];
-      // Hitung aktivitas baru: grup baru yang belum ada di cache
       const cached = await getCachedGroups();
-      const cachedIds = new Set(cached.map((g) => g.id_group));
-      const newCount = fresh.filter((g) => !cachedIds.has(g.id_group)).length;
-      if (newCount > 0) {
-        setNewActivityCount(newCount);
-        // Kirim notifikasi komunitas hanya jika toggle aktif
-        if (enabled) {
-          await sendCommunityNotification('new_activity', `${newCount} grup baru`);
+      if (cached.length > 0) setGroups(cached);
+    } catch { /* abaikan */ }
+
+    // Lalu coba server dengan timeout 6 detik
+    try {
+      let enabled = true;
+      try { enabled = await getCommunityEnabled(); setCommunityOn(enabled); } catch {}
+
+      const timeout = new Promise((_, r) => setTimeout(() => r(), 6000));
+      const res = await Promise.race([api.getGroups(), timeout]);
+      const fresh = res.groups || [];
+
+      // Hitung grup baru
+      try {
+        const cached = await getCachedGroups();
+        const cachedIds = new Set(cached.map((g) => g.id_group));
+        const newCount = fresh.filter((g) => !cachedIds.has(g.id_group)).length;
+        if (newCount > 0) {
+          setNewActivityCount(newCount);
+          if (enabled) {
+            sendCommunityNotification('new_activity', `${newCount} grup baru`).catch(() => {});
+          }
         }
-      }
+      } catch {}
+
       setGroups(fresh);
       await cacheGroups(fresh);
       setOffline(false);
-    } catch (e) {
+    } catch {
       setOffline(true);
-      setGroups(await getCachedGroups());
-    } finally {
-      setLoading(false);
+      // Sudah di-set dari cache di atas, tidak perlu set ulang
     }
   }, []);
 

@@ -14,12 +14,41 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView,
-  StyleSheet, Alert, Modal, FlatList,
+  StyleSheet, Alert, Modal,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// ── Mapping nama gerakan → aset GIF/PNG ──────────────────────────────────────
+const EXERCISE_ASSETS = {
+  'push up':           require('../../assets/pushup.gif'),
+  'squat':             require('../../assets/squat.gif'),
+  'burpee':            require('../../assets/burpee.gif'),
+  'high knees':        require('../../assets/high-knee.gif'),
+  'jumping jack':      require('../../assets/jumping-jack.gif'),
+  'lunges':            require('../../assets/lunge.gif'),
+  'mountain climber':  require('../../assets/mountain-climber.gif'),
+  'glute bridge':      require('../../assets/glute-bridge.gif'),
+  'russian twist':     require('../../assets/russian-twist.gif'),
+  'pull up':           require('../../assets/pull-up.gif'),
+  'sit up':            require('../../assets/sit-up.gif'),
+  'bicycle crunch':    require('../../assets/sit-up.gif'),  // pakai sit-up sebagai fallback
+  'plank':             require('../../assets/plank.png'),
+  'side plank':        require('../../assets/side-plank.png'),
+};
+
+function getExerciseAsset(nama) {
+  if (!nama) return null;
+  const key = nama.toLowerCase().trim();
+  if (EXERCISE_ASSETS[key]) return EXERCISE_ASSETS[key];
+  for (const k of Object.keys(EXERCISE_ASSETS)) {
+    if (key.includes(k) || k.includes(key)) return EXERCISE_ASSETS[k];
+  }
+  return null;
+}
 
 // ── Palet ─────────────────────────────────────────────────────────────────────
 const TEAL    = '#0F766E';
@@ -296,10 +325,21 @@ export default function TimerScreen() {
 
         {/* ── Kartu Gerakan Aktif ── */}
         <View style={s.activeCard}>
-          <View style={s.activeCardLeft}>
-            <View style={s.activeIconBox}>
-              <Ionicons name="fitness-outline" size={28} color={GREEN} />
-            </View>
+          {/* GIF animasi gerakan — ukuran besar di kiri */}
+          <View style={s.activeGifBox}>
+            {getExerciseAsset(curEx.nama) ? (
+              <Image
+                source={getExerciseAsset(curEx.nama)}
+                style={s.activeGif}
+                contentFit="cover"
+                autoplay
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <View style={[s.activeGifBox, { backgroundColor: GREEN_LL, alignItems: 'center', justifyContent: 'center' }]}>
+                <Ionicons name="fitness-outline" size={40} color={GREEN} />
+              </View>
+            )}
           </View>
           <View style={{ flex: 1, marginLeft: 14 }}>
             <Text style={s.activeName}>{curEx.nama}</Text>
@@ -564,12 +604,14 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: WHITE, borderRadius: 16,
     marginHorizontal: 16, marginBottom: 12,
-    padding: 16, borderWidth: 1, borderColor: BORDER,
+    padding: 14, borderWidth: 1, borderColor: BORDER,
   },
-  activeCardLeft:{ },
-  activeIconBox: {
-    width: 56, height: 56, borderRadius: 14,
-    backgroundColor: GREEN_LL, alignItems: 'center', justifyContent: 'center',
+  activeGifBox: {
+    width: 90, height: 90, borderRadius: 14,
+    overflow: 'hidden', backgroundColor: GREEN_LL,
+  },
+  activeGif: {
+    width: 90, height: 90,
   },
   activeName:   { fontSize: 18, fontWeight: 'bold', color: TEXT, marginBottom: 2 },
   activeTarget: { fontSize: 13, color: MUTED, marginBottom: 8 },

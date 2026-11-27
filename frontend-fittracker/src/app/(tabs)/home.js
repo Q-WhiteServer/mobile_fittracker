@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   View, Text, Pressable, ScrollView,
-  StyleSheet, Image, ActivityIndicator,
+  StyleSheet, Image,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -63,8 +63,16 @@ function initials(name) {
 export default function HomeScreen() {
   const { user } = useAuth();
 
-  const [stats,        setStats]        = useState(null);
-  const [loadingStats, setLoadingStats] = useState(true);
+  const [stats,        setStats]        = useState({
+    // Langsung tampil dengan data default — update di background dari server
+    profil_lengkap: true,
+    total_jadwal: 0,
+    total_latihan_selesai: 0,
+    total_set: 0,
+    total_reps: 0,
+    latihan_minggu_ini: 0,
+  });
+  const [loadingStats, setLoadingStats] = useState(false);
   const [weekDays]                      = useState(() => buildWeekDays());
   const [activeDay,    setActiveDay]    = useState(
     () => new Date().toISOString().slice(0, 10)
@@ -73,16 +81,20 @@ export default function HomeScreen() {
   const [level, setLevel] = useState('Menengah');
 
   useFocusEffect(useCallback(() => {
+    // Load lokal dulu (instan), lalu coba server di background
     (async () => {
-      setLoadingStats(true);
       try {
-        const res = await api.getStats();
-        setStats(res.stats);
-      } catch {
-        try { setStats(await getStatsLocal()); } catch { setStats(null); }
-      } finally {
-        setLoadingStats(false);
-      }
+        const local = await getStatsLocal();
+        if (local) setStats(local);
+      } catch { /* abaikan */ }
+    })();
+    // Background: coba ambil dari server dengan timeout 5 detik
+    (async () => {
+      try {
+        const timeout = new Promise((_, r) => setTimeout(() => r(), 5000));
+        const res = await Promise.race([api.getStats(), timeout]);
+        if (res?.stats) setStats(res.stats);
+      } catch { /* server mati — tetap pakai data lokal */ }
     })();
   }, []));
 
@@ -145,26 +157,20 @@ export default function HomeScreen() {
       </View>
 
       {/* ── 3. Target Mingguan ── */}
-      {loadingStats ? (
-        <View style={s.loadingBox}>
-          <ActivityIndicator color={colors.primary} size="small" />
+      <View style={s.targetCard}>
+        <View style={s.targetRow}>
+          <Text style={s.targetLabel}>Target mingguan</Text>
+          <Text style={s.targetVal}>{latihanMinggu} / {targetMinggu} latihan</Text>
         </View>
-      ) : (
-        <View style={s.targetCard}>
-          <View style={s.targetRow}>
-            <Text style={s.targetLabel}>Target mingguan</Text>
-            <Text style={s.targetVal}>{latihanMinggu} / {targetMinggu} latihan</Text>
-          </View>
-          <View style={s.progressBg}>
-            <View style={[s.progressFill, { width: `${Math.round(progressPct * 100)}%` }]} />
-          </View>
-          <Text style={s.targetSub}>
-            {sisaLatihan === 0
-              ? '🎉 Target minggu ini tercapai!'
-              : `${sisaLatihan === 2 ? 'Dua' : sisaLatihan} sesi lagi untuk mencapai targetmu!`}
-          </Text>
+        <View style={s.progressBg}>
+          <View style={[s.progressFill, { width: `${Math.round(progressPct * 100)}%` }]} />
         </View>
-      )}
+        <Text style={s.targetSub}>
+          {sisaLatihan === 0
+            ? '🎉 Target minggu ini tercapai!'
+            : `${sisaLatihan === 2 ? 'Dua' : sisaLatihan} sesi lagi untuk mencapai targetmu!`}
+        </Text>
+      </View>
 
       {/* ── 4. Jadwal Hari Ini ── */}
       <View style={s.sectionRow}>
@@ -332,11 +338,6 @@ const s = StyleSheet.create({
   dayNum:    { fontSize: 14, fontWeight: 'bold', color: '#111827' },
   textWhite: { color: '#FFFFFF' },
   activeDot: { width: 5, height: 5, borderRadius: 3, marginTop: 5 },
-
-  /* Loading */
-  loadingBox: {
-    paddingVertical: 20, alignItems: 'center', marginBottom: 16,
-  },
 
   /* Target mingguan */
   targetCard: {

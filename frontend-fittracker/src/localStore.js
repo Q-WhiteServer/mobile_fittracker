@@ -39,12 +39,14 @@ export async function getProfile() {
 }
 export async function saveProfile(profile) {
   await setJSON(KEYS.PROFILE, profile);
-  // Best-effort sync ke backend (abaikan kegagalan agar tetap offline).
+  // Best-effort sync ke backend dengan timeout 5 detik.
   try {
-    await api.saveProfile(profile);
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 5000)
+    );
+    await Promise.race([api.saveProfile(profile), timeout]);
   } catch (e) {
     console.warn('[localStore] Sinkronisasi profil ke backend gagal:', e.message);
-    /* offline — tetap tersimpan lokal */
   }
 }
 
@@ -69,9 +71,9 @@ export async function createPlan(data) {
     exercises: Array.isArray(data.exercises) ? data.exercises : [],
     created_at: new Date().toISOString(),
   };
-  // Best-effort sync ke backend (abaikan kegagalan agar tetap offline).
+  // Best-effort sync ke backend dengan timeout 5 detik.
   try {
-    const res = await api.createPlan({
+    const syncPromise = api.createPlan({
       nama_plan: plan.nama_plan,
       tanggal: plan.tanggal,
       hari: plan.hari,
@@ -82,8 +84,12 @@ export async function createPlan(data) {
         target_reps: ex.target_reps,
       })),
     });
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 5000)
+    );
+    const res = await Promise.race([syncPromise, timeout]);
     if (res && res.id_plan) {
-      plan.id_plan = res.id_plan; // simpan ID backend untuk sinkronisasi hapus/update
+      plan.id_plan = res.id_plan;
     }
   } catch (e) {
     console.warn('[localStore] Sinkronisasi plan ke backend gagal:', e.message);
